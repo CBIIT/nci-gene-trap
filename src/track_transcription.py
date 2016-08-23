@@ -11,11 +11,11 @@ import os
 
 class Track:
 
-  def __init__(self, output, cell_name, images_dir=None, override_results=False):
+  def __init__(self, output_dir , images_dir=None, override_results=False):
 
 
 
-    self.output_directory = os.path.abspath(output) + '/' + cell_name + '/'
+    self.output_directory = os.path.abspath(output_dir) 
 
     self.create_dir(self.output_directory, override=override_results)
 
@@ -629,64 +629,3 @@ class Track:
 
     return temp_np
 
-
-
-if __name__ == "__main__":
-  #trk file preprocessing
-  #images_dir= "/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/registration/"
-  #location_file_particle_1 = images_dir + 'image11-maxproj.ome_p0_Cell13_cropped.SubFF1.trk'
-  #index_file_particle_1 = images_dir + 'image11-maxproj.ome_p0_Cell13_cropped.SubFF1.trk.new_idelized_traces.txt.hist.txt'
-  
-  
-  #cell13 params 
-  #track_obj =  Track("./", "cell13", override_results=False)
-  #images_dir="/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-p0-cell13"
-  #images_prefix ="image11-maxproj.ome_p0_Cell13_cropped.SubFF8"
-  #images_suffix = ".tif"
-  
-  #cell0 params 
-  track_obj =  Track("./", "cell11", override_results=False)
-  
-  images_dir="/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-p0-cell11"
-  images_prefix ="image11-maxproj.ome_p0_Cell11_cropped.SubFF1" 
-  images_suffix = ".tif"
-  location_file_particle_1 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF1.trk'
-  index_file_particle_1 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF1.trk.new_idelized_traces.txt.hist.txt'
-  
-  location_file_particle_10 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF10.trk'
-  index_file_particle_10 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF10.trk.new_idelized_traces.txt.hist.txt'
-  
-  location_file_particle_11 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF11.trk'
-  index_file_particle_11 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF11.trk.new_idelized_traces.txt.hist.txt'
-  
-  params = "/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/registration/param-affine.txt"
-  
-  
-  a = track_obj.preprocess_track_file(location_file_particle_1, index_file_particle_1)
-  b = track_obj.preprocess_track_file(location_file_particle_10, index_file_particle_10)
-  c = track_obj.preprocess_track_file(location_file_particle_11, index_file_particle_11)
-  
-  all_points = np.concatenate((a,b,c))
-  frames = set(all_points[:,0].tolist())
-  frames.remove(1.)
-  
-  
-  #print track_obj.frames_dictionary
-  fixed = str(1).zfill(3)
-  #moving = [str(int(frame_id)).zfill(3) for frame_id in frames[1:,0].tolist()] 
-  moving = [str(int(frame_id)).zfill(3) for frame_id in frames] 
-  
-  float_frame = {}
-  for i in moving :
-    float_frame[i] = fixed 
-  
-  track_obj.register_series_to_single_frame(images_dir, images_prefix , images_suffix, fixed, moving, params, reverse=True)
-  #print track_obj.collect_registered_images_to_single_dir(fixed, moving)
-  
-  #print track_obj.register(fixed,moving, params)
-  track_obj.transform_points(float_frame)
-  df = track_obj.frame_points_to_dataframe('001')
-  print df
-  track_obj.track(df, 500, 30 )
-  #p = DataFrame(data = a, columns = ['frame','x','y'])
-  #track_obj.track(p, 250, 200)
