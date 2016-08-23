@@ -1,252 +1,692 @@
-
-# coding: utf-8
-
-# In[1]:
-
-#Python files for taking in point files and returning tracking values
-
-#from __future__ import division, unicode_literals, print_function  # for compatibility with Python 2 and 3
-
-#import matplotlib as mpl
-#import matplotlib.pyplot as plt
-
-# Optionally, tweak styles.
-#mpl.rc('figure',  figsize=(10, 6))
-#mpl.rc('image', cmap='gray')
-
 import numpy as np
 import pandas as pd
 from pandas import DataFrame, Series  # for convenience
 import pims
 import trackpy as tp
 import re
+import shutil
+import threading
+import multiprocessing
 import os
 
-class track_transcription:
+class Track:
+
+  def __init__(self, output, cell_name, images_dir=None, override_results=False):
+
+
+
+    self.output_directory = os.path.abspath(output) + '/' + cell_name + '/'
+
+    self.create_dir(self.output_directory, override=override_results)
+
+    self.elastix_dir = self.output_directory + '/elastix/' 
+    self.transformix_dir = self.output_directory + '/transformix/' 
+    self.images_dir = images_dir
+
+
+    self.create_dir(self.elastix_dir, override=override_results)
+    self.create_dir(self.transformix_dir, override=override_results)
+
+
+    self.registration_results = os.path.join(self.elastix_dir, 'registration_results') 
+    self.create_dir(self.registration_results)
+
+    self.elastix_result_prefix="transform" 
+
+    #This can be retrived from the params file.
+    self.registered_image_name = "result.0.tif"
+
+    """ 
+    frames_dictionary has the following structure:
+
+
+
+                                          |-->'original_points'(dict)-->point_id(key):index[x,y](value)
+                                          | 
+    frames_dictionary-->frame_id(dict)--->|-->'transformed_points'(dict)-->original_frame_id(dict)-->point_id(key):index[x,y](value)
+                                          |
+                                          |-->'n_points'(int): Number of original point in this frame_id. Used to generate successive points_id. 
+    """
+    self.frames_dictionary = {} 
     
 
-    
-    #####PUBLIC CLASS FUNCTIONS
-    
-    def preprocess_track_file(self, track, index): 
-        """Create a numpy array that contains the frame numer and location of the object in only the frames where the object was physically present
 
+#####PUBLIC CLASS FUNCTIONS
+
+  def preprocess_track_file(self, track, index): 
+    """Create a numpy array that contains the frame numer and location of the object in only the frames where the object was physically present
 
         Parameters: 
-            track: file that indicates the spacial location of the object in each frame
-            index: file that indicates which objects are physically present in each frame
-            
-            
-        Returns:
-            [length(file),3] np array
-        """
-        
-        
-        location_file_1 = open(track)
-        location_file_2 = open(track)
-        index_file = open(index)
-        a = index_file.readlines()
-        length = len(a)
-        indices = []
-        count = 0
-        while count < length-1:
-            if int(a[count]) == 1:
-                indices.append(count)
-            count+=1
-        locations = np.zeros((length,3))
-        x = [float(x[5:11]) for x in location_file_1]
-        y = [float(y[20:26]) for y in location_file_2]
-        x.pop(0)
-        y.pop(0)
-        locations[:,1] = x
-        locations[:,2] = y
-        locations[:,0] = list(range(1,length+1))
-    
-        positions = locations[indices]
-        return positions
-    
-    
+        track: file that indicates the spacial location of the object in each frame
+        index: file that indicates which objects are physically present in each frame
 
-    def frames_id_to_elastix(self, list_np_array, output_frames_file_location):
-        """Creates a list of frames where there is at least one particle present and writes it to an output file
-        
-        
-        Parameters:
-            list_np_array: list of numpy arrays generated from the preprocess_track_file function
-            output_frames_file_location: file location for frames to be written to
-            
-            
-        Returns:
-            list of frames
-        """
-        
-        
-        frames_id = []
-        if len(list_np_array) == 1:
-            for i in range(len(list_np_array[0])):
-                frames_id.append(int(list_np_array[0][i,0]))
-        else:
-            for i in range(len(list_np_array)):
-                for j in range(len(list_np_array[i][:,0])):
-                    frames_id.append(int(list_np_array[i][j,0]))
-                
-        t = list(set(frames_id))
-        file = open(output_frames_file_location + 'elastix_frames_file.txt','w')
-        for i in t:
-            file.write(str(i) + '\n')
-        return t
-    
-    
-    def run_elastix_2(script_location, output_directory, format_, image_directory, parameter_file, slice_prefix, frames_input):
-        os.system('mkdir ' + output_directory + '/all_images')
-        os.system('mkdir ' + output_directory + '/elastix')
 
-        for i in frames_input:
-            moving = ' -m ' + image_directory + '/' + slice_prefix + '2.tif '
-            fixed = '-f ' + image_directory + '/' + slice_prefix + str(i) + '.tif '
-            parameter = '-p ' + parameter_file + ' '
-            output = '-out ' + output_directory + '/frame_' + str(i)
-        
-            line = ' "' + moving + fixed+ parameter + output + '"'
-            print(script_location + line)
-            os.system('mkdir '+ output_directory +'/frame_' + str(i))
-            os.system(script_location + line)
-            os.system('cp ' + output_directory + '/frame_' + str(i) + '/result.0.tif ' +  output_directory + '/all_images/frame.' + str(i) + '.tif')
+        Returns:
+        [length(file),3] np array
+    """
+    self.check_file(index)
+    index_file = open(index)
+    a = index_file.readlines()
+    length = len(a)
+    indices = []
+    count = 0
+    while count < length-1:
+      if int(a[count]) == 1:
+        indices.append(count)
+      count+=1
+    locations = np.zeros((length,3))
+    location_array = self.find_points_from_trk_file(track)
+    x = location_array[:,0].tolist()
+    y = location_array[:,1].tolist()
+    x.pop(0)
+    y.pop(0)
+    locations[:,1] = x
+    locations[:,2] = y
+    locations[:,0] = list(range(1,length+1))
   
-    
-    def run_transformix_2(self, run_transformix_location, transformix_input_points_directory, output_directory, frames_input, object_name):
-        os.system('mkdir '+ output_directory + '/transformix/')
-        os.system('mkdir '+ output_directory + '/transformix/' + object_name)
-        os.system('mkdir ' + output_directory + '/transformix/' + object_name + '/all_output_points')
+    positions = locations[indices]
 
-    
-        for i in frames_input:
-            i = int(i)
-            os.system('mkdir ' + output_directory + '/transformix/' + object_name + '/frame_' + str(i))
-        
-        
-            input_points = ' -def ' + transformix_input_points_directory + '/inputPointsFrame' + str(i) + '.0.txt'
-            output = ' -out ' + output_directory + '/transformix/' + object_name + '/frame_' + str(i)
-            parameter = ' -tp ' + output_directory + '/elastix/frame_' + str(i) + '/TransformParameters.0.txt'
-        
-            transformix_call = input_points + output + parameter
-            os.system(run_transformix_location + ' "'+ transformix_call + '"')
-        
-       
+    #George's Edit 
+    for row in positions:
+      frame_id, x, y = row   
+      frame_id = str(int(frame_id)).zfill(3)
+      self.add_original_point_to_dictionary(frame_id, [x, y])
 
-#    def run_elastix(self, run_elastix_location, output_directory, format_, image_directory, parameter_file, slice_prefix, frames_input):
-#        """Runs elastix for entire cell
-#        
-#        
-#        Parameters:
-#            run_elastix_location: where the bash script is located
-#            output_directory: where output will be placed
-#            format_: image file type returned - preferrably .tif
-#            image_directory: folder where the input images are located
-#            parameter_file: parameter file elastix uses to register each image
-#            slice_prefix: prefix for each image from the image directory
-#            frames_input: file where the frames to run elastix are indicated
-#        """
-#        
-#        
-#        os.system(run_elastix_location + ' ' + output_directory + ' '+  format_ + ' ' + image_directory + ' ' + 
-#                  parameter_file + ' ' + slice_prefix + ' ' + frames_input)
-#    
-#    
-#
-#    def run_transformix(self, run_transformix_location, transformix_input_points_directory, trans_output_folder, trans_parameter_output_folder, frames_input):
-#        """Runs transformix for a given particle
-#        
-#        Parameters:
-#            run_transformix_location: where the bash script is located
-#            input_points_folder: where the input points to run transformix are located
-#            trans_output_folder: where the output points files will be written
-#            frames_input: txt file that contains which frames to run transformix
-#        """
-#        
-#        
-#        os.system(run_transformix_location + ' ' + transformix_input_points_directory + ' ' + trans_output_folder + ' ' + 
-#                  trans_parameter_output_folder + ' ' + frames_input)               
-#    
+    return positions
+
+
+  def transform_points(self, float_frame):
+    """Transform the points using transfromix 
+      Parameters:
+        float_frames: A dictionary where the keys are the reference frames where points resides,
+        and the values are the float frame to which the every point in the reference frame will be transformed.
+
+    """
+
+    #Create the directory where the transformix input files reside  
+    input_files_dir = os.path.join(self.transformix_dir, "transformix_inputs") 
+    self.create_dir(input_files_dir)
+
+    for ref_id in  float_frame:
+      #Get the registration result
+      float_id = float_frame[ref_id]
+      registration_result = self.get_registration_results(ref_id, float_id)
+      if not os.path.isfile(registration_result):
+        raise Exception ("The registration result file {0} does not exists".format(registration_result))
+
+
+      #Get the points in the frame (original and transformed)
+      original_points = {}
+      transformed_points = {}
+      if ref_id in self.frames_dictionary: 
+        if "original_points" in self.frames_dictionary[ref_id]:
+          original_points =  self.frames_dictionary[ref_id]['original_points']
+        if 'transformed_points' in self.frames_dictionary[ref_id]:
+          transformed_points = self.frames_dictionary[ref_id]['transformed_points']
+
+
+      #Loop over original and transformed to create the list of points
+      points_indexes_list = []
+      original_frame_id_list = []
+      point_id_list = []
+      n_points = len(original_points)
+
+      for  point_id, indexes in original_points.items(): 
+        points_indexes_list.append(indexes)
+        original_frame_id_list.append(ref_id)
+        point_id_list.append(point_id) 
+
+      for original_frame_id, points_id in transformed_points.items():
+        n_points += len(points_id)
+        for point, indexes in points_id.items(): 
+          points_indexes_list.append(indexes)
+          original_frame_id_list.append(original_frame_id)
+          point_id_list.append(point) 
+
+
+      if n_points > 0: 
+
+        #Create the input file
+        frame_input_file = os.path.join(input_files_dir,"input_points" + ref_id + "-" + float_frame[ref_id] + ".txt")
+        self.points_to_transformix(points_indexes_list, frame_input_file)
+  
+        #Create the transformix directory
+        transform_directory = self.get_transform_dir(ref_id, float_id) 
+        self.create_dir(transform_directory, override=True)
+  
+        #Call transformix
+        output_points_file = self.transform(frame_input_file, registration_result, transform_directory)
+  
+  
+        #Parse the transformix results
+        output_points = self.find_points_from_transformix_output(output_points_file)
+        n_transformed_points = len(output_points)
+        
+        if n_transformed_points != n_points:
+          raise Exception ("ERROR: The number of transformed points {0} does not equal the number of input points {1}".format(n_transformed_points, n_poinst))
  
 
-    def generate_input_point_files(self, np_array, transformix_input_points_directory):
-        """Generates input files for transformix parameters
+        #Write the results back in the dictionary 
+        for original_frame_id, point_id, transformed_indexes in zip(original_frame_id_list, point_id_list, output_points):
+          self.add_transformed_point_to_dictionary(float_id, original_frame_id, point_id, transformed_indexes)
+
+
+      else:
+        print "WARNING: there is no points to be transformed for frame_id {0}.".format(ref_id)
+
+  def points_to_transformix(self, points,  destination_file): 
+    """Create a transformix input file for points in the transform directory
+      Parameters:  
+        points: a list of points  
+        destination_file: The path to the file where the transformix input files will reside
+
+    """
+
+    #self.create_dir(transform_directory)
+    #input_points_file_name = os.path.join(transform_directory, "input_points.txt")
+    input_points_file = open(destination_file, 'w')
+    input_points_file.write('index\n')
+    input_points_file.write(str(len(points)) + '\n')
+
+    for point in points:
+      input_points_file.write(str(point[0]) + ' ' + str(point[1]) + '\n')
+
+    input_points_file.close()
+
+  def transform(self, input_points_file, registration_result, transform_directory=None):
+    """Transform the input_points  using transformix
+      Parameters:
+        input_points_file: File containing the input points
+        registration_result: The file containing the registraton result to use in the transformation 
+        transform_directory: The directory where the transformation will take place 
+
+
+      Returns:
+        trasnform_result: Path to the transformix output file
+    """
+
+    #Make sure ELASTIX_PATH is exported
+    try:
+      os.environ['ELASTIX_PATH'] 
+    except KeyError as error:
+      raise Exception('ERROR: The environment variable "ELASTIX_PATH" is not exported')
+
+
+    #Make sure GENE_TRAP_ROOT  is exported
+    try:
+      os.environ['GENE_TRAP_ROOT'] 
+    except KeyError as error:
+      raise Exception ('ERROR: The environment variable "GENE_TRAP_ROOT" is not exported')
+
+    transformix_script = os.environ['GENE_TRAP_ROOT'] + '/bin/transformix.sh'
+
+    #Verify the input arguments
+    self.check_file(input_points_file)
+    self.check_file(registration_result)
         
-        Parameters:
-            np_array: numpy array genertated from preprocess_track_file
-            transformix_input_points_directory: directory to copy transformix input points files into
-        """
-        
-        
-        for i in range(len(np_array[:,0].tolist())):
-            input_points_file = open(transformix_input_points_directory + '/inputPointsFrame.' + str(np_array[i,0]) + '.txt', 'w')
-            input_points_file.write('index\n1\n')
-            input_points_file.write(str(np_array[i,1]) + ' ' + str(np_array[i,2]))
-    
+    if transform_directory != None:  
+      self.create_dir(transform_directory, override=True)
+      output_dir = transform_directory
+    else:
+      output_dir = self.transformix_dir
+    output_dir = os.path.abspath(output_dir)
+
+
+
+    input_points = ' -def ' + os.path.abspath(input_points_file)
+    transform_dir = ' -out ' +  output_dir
+    transform_parameters = ' -tp ' +    os.path.abspath(registration_result)
+    output_arguments = ' "' + output_dir + '" '
+    transformix_call =  transformix_script + ' "' + input_points + transform_dir + transform_parameters +  ' " ' + output_arguments
+
+    print transformix_call
+    status = os.system(transformix_call)
    
+    if status != 0:
+      raise Exception ('ERROR: The transformix call "{0}" returned with code {1}'.format(elastix_call, status))
+    else: 
+      transformed_points =  os.path.join(output_dir, "outputpoints.txt" ) 
+         
+    if not os.path.isfile(transformed_points):
+      transformed_points = None
 
-    def transformix_results_to_array(self, np_array, transformix_points_directory):
-        """Reads Transformix results and copies the frames and output points to a np array
-        
-        
-        Arguments:
-            np_array: generated from preprocess_track_file
-            transformix_points_directory: location where transformix points were written into
-            
-            
-        Returns:
-            [length(file),3] np array
-        """
-        
-        
-        path = transformix_points_directory + '/Frame_'
-        particle = np.zeros((len(np_array[:,0].tolist()),3))
-        for i in range(len(np_array[:,0].tolist())):
-            points = self.find_points_from_transformix_output(path + str(int(np_array[i,0])) + '/outputpoints.txt')
-            particle[i,1] = float(points[0])
-            particle[i,2] = float(points[1])
-            particle[:,0] = np_array[:,0]
-        p = DataFrame(data = particle, columns = ['frame','x','y'])
-        return p
-            
+    return transformed_points
 
-        
-    def track(self, np_array, memory, distance):
-        """Tracks object and plots movement
-        
-        
-        Parameters:
-            np_array: generated from transformix_results_to_array
-            memory: maximum number of frames an object can be absent before it is declared a separate object
-            distance: search range between frames for the movement of one object
-        """
-        
-        t = tp.link_df(np_array,search_range = distance, memory = memory)
-        return t # tp.plot_traj(t)
-        
-        
+
+  def collect_registered_images_to_single_dir(self, reference_frame_id, moving_frames_ids, destination_dir=None):
+    """Group the transformed image frames into the destination directory
+      Parameters:
+        reference_frame: The fixed image id to which the images were registered. 
+        moving_frames_ids: List of the ids for the moving frames.
+        destination_dir: The directory where the results should be accumulated.
+
+      Returns:
+        destination_directory: The folder where the results were grouped.
+    """
     
-    ###PRIVATE CLASS FUNCTIONS   
-    def find_points_from_transformix_output(self,file):
-        """Finds output points in a transformix outputpoints.txt file
-        
-        
+    if destination_dir != None:
+      destination_name  = destination_dir     
+    else:
+      destination_name  = os.path.join(self.elastix_dir, str(reference_frame_id) + "-results/") 
+    destination_name = os.path.abspath(destination_name)
+    self.create_dir(destination_name, override = True)
+    reference_list = [str(reference_frame_id)] * len (moving_frames_ids)
+    
+    results_files = [os.path.join(self.get_registration_dir(reference_id,moving_id), self.registered_image_name)  for reference_id, moving_id in zip(reference_list, moving_frames_ids)]
+    for file_name, file_id in zip(results_files, moving_frames_ids) :
+      if not os.path.exists(file_name):
+        raise Exception('ERROR: The file "{0}" does not exist.'.format(file_name))
+      shutil.copy(file_name, os.path.join(destination_name, "frame" + str(file_id)))
+    return destination_name
+
+  def register_series_to_single_frame(self, images_dir, image_prefix, image_suffix, reference_frame, moving_frames, registration_params, reverse=False):
+    """Register the list of moving_frames to the reference_frame. 
+        The images file name follows the format <image_prefix><frame_id><image_suffix>
+      Parameters:
+        images_dir: The directory that contains the images
+        image_prefix: The prefix of the image
+        image_suffix: The suffix for the image
+        reference_frame: The ID of the reference image
+        moving_frames: The list of IDs of the float images
+        registration_params: Path to the elastix parameters file
+        reverse: Switch the registration direction
+    """
+ 
+    self.images_dir = images_dir
+
+    moving_list = [str(frame) for frame in moving_frames]
+    reference_list = [str(reference_frame)] * len(moving_frames)
+
+    if reverse:
+      temp = moving_list
+      moving_list = reference_list
+      reference_list = temp
+
+   
+    fixed_images = [os.path.join(self.images_dir,image_prefix + str(frame_id) + image_suffix) for frame_id in reference_list]
+    moving_images = [os.path.join(self.images_dir,image_prefix + str(frame_id) + image_suffix) for frame_id in moving_list]
+    params = [registration_params] * len(moving_frames)
+    registration_directories = [self.get_registration_dir(reference_id,moving_id) for reference_id, moving_id in zip(reference_list, moving_list)]
+    registration_results_filenames = [self.get_registration_results(fixed, moving) for fixed, moving in zip(reference_list, moving_list)]
+    #transformed_images_names = [self.get_transformed_image(fixed, moving) for fixed, moving in zip (reference_list, moving_list)] 
+
+    register_arguments = zip(fixed_images, moving_images, params, registration_directories,registration_results_filenames)
+
+  
+    #Check if registration is already done  
+    work_list = []
+    for fixed,moving, arguments in zip(reference_list, moving_list, register_arguments):
+      if not os.path.isfile(self.get_registration_results(fixed, moving)):
+        work_list.append(arguments)
+
+    print len(work_list)
+    from multiprocessing.pool import ThreadPool
+    nthreads = multiprocessing.cpu_count()
+    print "nthreads = " + str(nthreads)
+    pool = ThreadPool(processes=nthreads)
+    async_results = []
+    for registration in range(len(work_list)):
+      async_result = pool.apply_async(self.register, work_list[registration])
+      async_results.append(async_result)
+
+
+    for registration in range(len(work_list)):
+      transformed_image, registration_solution = async_results[registration].get()
+      if registration_solution == None: 
+        raise Exception ("ERROR: The {0} file does not exist".format(registration_solution))
+
+
+  def register(self, fixed_image, moving_image, registration_params, temp_directory=None, registration_result_name=None):
+    """ Register two images using elastix
         Parameters:
-            Transformix outputpoints.txt file
-        
-        
+          fixed_image: Path to the fixed image
+          moving_image: Path to the moving image
+          registration_params: Path to the elastix parameters file
+          registration_result_name: The complete path to the file where the registration result should be copied
+
         Returns:
-            size 2 list
-        """
-        points = open(file)
-        a = re.findall("OutputIndexFixed\s*=\s*\[\s*[0-9]*\s*[0-9]*\s*\]", points.read())
-        b = []
-        for j in range(len(a)):
-            b.append([int(s) for s in a[j].split() if s.isdigit()])
-        c = []
-        for i in range(len(b[0])):
-            c.append(b[0][i])
-        return c
+          [transformed_image, registration_results] 
+          transformed_image: Path to the transfomed image. "None" if the file does not exist.
+          registration_result: The results of elastix regsitration. "None" if the file does not exist. 
+    """
+
+    #Make sure ELASTIX_PATH is exported
+    try:
+      os.environ['ELASTIX_PATH'] 
+    except KeyError as error:
+      raise Exception('ERROR: The environment variable "ELASTIX_PATH" is not exported')
 
 
+    #Make sure GENE_TRAP_ROOT  is exported
+    try:
+      os.environ['GENE_TRAP_ROOT'] 
+    except KeyError as error:
+      raise Exception ('ERROR: The environment variable "GENE_TRAP_ROOT" is not exported')
+
+    elastix_script = os.environ['GENE_TRAP_ROOT'] + '/bin/elastix.sh'
+
+    self.check_file(fixed_image)
+    self.check_file(moving_image)
+    self.check_file(registration_params)
+        
+    if temp_directory != None:  
+      self.create_dir(temp_directory, override=True)
+      output_dir = temp_directory
+    else:
+      output_dir = self.elastix_dir
+      
+    output_dir = os.path.abspath(output_dir) 
+
+  
+    moving = ' -m ' + moving_image
+    fixed = ' -f ' + fixed_image 
+    parameter = ' -p ' + registration_params 
+    output = ' -out ' + output_dir 
+
+    elastix_arguments = ' " ' + moving + fixed + parameter + output + '"'
+    output_arguments = ' "' + output_dir + '" '
+
+    elastix_call =  elastix_script + elastix_arguments + output_arguments
+    print elastix_call
+
+    status = os.system(elastix_call)
+   
+    if status != 0:
+      raise Exception ('ERROR: The elastix call "{0}" returned with code {1}'.format(elastix_call, status))
+    else: 
+      transformed_image =  os.path.join(output_dir, "result.0.tif") 
+      registration_result =  os.path.join(output_dir, "TransformParameters.0.txt")
+         
+    if not os.path.isfile(transformed_image):
+      transformed_image = None
+    if not os.path.isfile(registration_result):
+      registration_result = None
+
+
+    #Rename the results if the new name is provided
+#    if transfomed_image != None and transformed_image_name != None:
+#      destitation = os.path.join(output_dir, transformed_image_name)
+#      shutil.copy(transformed_image, destination)
+#      transformed_image = destination
+
+    if registration_result != None and registration_result_name != None:
+      #destination = os.path.join(output_dir, registration_result_name)
+      shutil.copy(registration_result,registration_result_name)
+      registration_result = registration_result_name 
+
+       
+    return [transformed_image, registration_result]
+
+  def track(self, np_array, memory, distance):
+    """Tracks object and plots movement
+        Parameters:
+          np_array: generated from transformix_results_to_array
+          memory: maximum number of frames an object can be absent before it is declared a separate object
+          distance: search range between frames for the movement of one object
+    """
+    t = tp.link_df(np_array,search_range = distance, memory = memory)
+    tp.plot_traj(t)
+
+
+###PRIVATE CLASS FUNCTIONS   
+
+  def find_points_from_trk_file(self, file_name):
+    """Finds input points from trk file
+
+      Parameters:
+       .trk file
+
+
+      Returns:
+        np array. array[:,0] is the x coordinate and array[:,1] is the y coordinate
+    """
+
+    self.check_file(file_name)
+    points = open(file_name).readlines()
+    count = 0
+    x = []
+    y = []
+
+    for a in range(len(points)):
+      p = re.findall("[0-9]*\.[0-9]*", points[a])
+      x.append(float(p[0]))
+      y.append(float(p[1]))
+      count += 1
+    array = np.zeros((len(points),2))
+    array[:,0] = x
+    array[:,1] = y
+    return array
+
+
+  def create_dir(self, dir_name, override=False):
+    """Creates a directory even if it exists 
+      Prameters:
+        dir_name: The directory path
+
+    """
+
+    if os.path.isdir(dir_name):
+      if override:
+        shutil.rmtree(dir_name)
+        os.makedirs(dir_name)
+    else:
+        os.makedirs(dir_name)
+
+
+  def check_file(self, file_path):
+    """Checks the existance of a file
+      Parameters:
+        file_path: The path of the file
+    """
+
+    try:
+      if not os.path.exists(file_path):
+        raise Exception(file_path)  
+    except Exception as inst:
+     file_name = inst.args[0]
+     raise Exception ('The input file:"{0}" does not exists'.format(file_name))
+
+  def get_registration_results(self, fixed_id, float_id):
+    """returns the file name that should have the registration results 
+      Parameters:
+        fixed_id: The id of the fixed image
+        float_id: the id of the float image
+
+    """
+
+    file_path = os.path.join(self.registration_results,self.elastix_result_prefix + str(fixed_id) + '-' + str(float_id) + ".txt")
+    return file_path
+
+  def get_registration_dir(self, fixed_id, float_id): 
+    """returns the folder name that should have the registration results 
+      Parameters:
+        fixed_id: The id of the fixed image
+        float_id: the id of the float image
+    """
+
+    return os.path.join(self.elastix_dir,str(fixed_id) + "-" + str(float_id))
+
+
+
+  def get_transform_dir(self, fixed_id, float_id): 
+    """returns the folder name that should have the registration results 
+      Parameters:
+        fixed_id: The id of the fixed image
+        float_id: the id of the float image
+    """
+    return os.path.join(self.transformix_dir,  str(fixed_id) + "-" + str(float_id))
+
+
+  def find_points_from_transformix_output(self,file_name):
+    """Finds output points in a transformix outputpoints.txt file
+      Parameters:
+        file_name: Transformix outputpoints.txt file
+
+      Returns:
+        ouptut_points: A 2D list of points    size 2 list
+    """
+    
+    self.check_file(file_name)
+    points_file = open(file_name)
+    a = re.findall("OutputIndexFixed\s*=\s*\[\s*[0-9]*\s*[0-9]*\s*\]", points_file.read())
+    output_points = []
+    for k in range(len(a)):
+      output_points.append([int(s) for s in a[k].split() if s.isdigit()])
+
+    return output_points
+
+
+  def add_transformed_point_to_dictionary(self, dest_frame_id, original_frame_id, point_id, indexes):
+    """Adds a transformed point to the frames_dictionary.
+      Prameters:
+        dest_frame_id: The frame where the point will be added
+        original_frame_id: The original frame where the point belongs. 
+        point_id: The point id in the origninal frame.
+        indexes: the indexes of the point in the destination frame id.
+    """
+
+    #Make sure indexes contains two number for X and Y.
+    if len(indexes) != 2:
+      print indexes
+      raise Exception ("ERROR: the lenght of indexes does not equal 2.")
+
+    if dest_frame_id == original_frame_id: 
+      raise Exception ("ERROR: Destination and original frame_id are equivalent{0}.".format(dest_frame_id))
+    
+    if not dest_frame_id in self.frames_dictionary:
+      self.frames_dictionary[dest_frame_id] = {}
+
+    if not 'transformed_points' in self.frames_dictionary[dest_frame_id]: 
+      self.frames_dictionary[dest_frame_id]['transformed_points']={}
+
+    if not original_frame_id in self.frames_dictionary[dest_frame_id]['transformed_points']:
+      self.frames_dictionary[dest_frame_id]['transformed_points'][original_frame_id]  = {}
+
+    self.frames_dictionary[dest_frame_id]['transformed_points'][original_frame_id][point_id] = indexes  
+
+
+  def add_original_point_to_dictionary(self, original_frame_id, indexes):
+    """Adds an original point to the frames_dictionary.
+      Parameters:
+        original_frame_id: The original frame where the point belongs. 
+        indexes: the indexes of the point in the destination frame id.
+    """
+
+    #Make sure indexes contains two number for X and Y.
+    if len(indexes) != 2:
+      print indexes
+      raise Exception ("ERROR: the lenght of indexes does not equal 2.")
+    
+    if not original_frame_id in self.frames_dictionary:
+      self.frames_dictionary[original_frame_id] = {}
+
+    if not 'original_points' in self.frames_dictionary[original_frame_id]:
+      self.frames_dictionary[original_frame_id]['original_points']={}
+      self.frames_dictionary[original_frame_id]['n_points']=0
+  
+    #Increament 
+    self.frames_dictionary[original_frame_id]['n_points'] += 1
+    point_id = self.frames_dictionary[original_frame_id]['n_points']
+    self.frames_dictionary[original_frame_id]['original_points'][point_id] = indexes  
+
+
+  def frame_points_to_dataframe(self, frame_id):
+    """Collect the original and transformed points from a frame and returns a data frame
+      Parameters:
+        frame_id: The ID of the frame where the points will be collected 
+
+      Returns:
+        data_frame: The DataFrame object, None if there are points in the frame.
+    """
+
+    if frame_id == None: 
+      raise Exception ("Invalid frame_id")
+
+    #frame_id should be converted to int for trackpy
+    int_frame_id = int(frame_id)
+
+    if not frame_id in self.frames_dictionary:
+      print "WARNING: the frame_id {0} is not part of the frames dictionary"
+      return None
+
+    temp_np = np.empty((0,4))
+    #Add original points
+    if 'original_points' in  self.frames_dictionary[frame_id]:
+      for point_id , indexes in self.frames_dictionary[frame_id]['original_points'].items():
+        temp_np = np.append(temp_np,[[int_frame_id,indexes[0], indexes[1], point_id]], axis=0)
+          
+    #Add transformed points
+    if 'transformed_points' in  self.frames_dictionary[frame_id]:
+      for original_frame_id , points_ids in self.frames_dictionary[frame_id]['transformed_points'].items():
+        for point_id , indexes in self.frames_dictionary[frame_id]['transformed_points'][original_frame_id].items():
+          temp_np = np.append(temp_np,[[int(original_frame_id),indexes[0], indexes[1], point_id]], axis=0)
+
+  
+    if temp_np.shape[0] == 0:
+      return None
+    else:    
+      return DataFrame(data = temp_np, columns = ['frame', 'x', 'y', 'particle_id'])
+
+    return temp_np
+
+
+
+if __name__ == "__main__":
+  #trk file preprocessing
+  #images_dir= "/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/registration/"
+  #location_file_particle_1 = images_dir + 'image11-maxproj.ome_p0_Cell13_cropped.SubFF1.trk'
+  #index_file_particle_1 = images_dir + 'image11-maxproj.ome_p0_Cell13_cropped.SubFF1.trk.new_idelized_traces.txt.hist.txt'
+  
+  
+  #cell13 params 
+  #track_obj =  Track("./", "cell13", override_results=False)
+  #images_dir="/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-p0-cell13"
+  #images_prefix ="image11-maxproj.ome_p0_Cell13_cropped.SubFF8"
+  #images_suffix = ".tif"
+  
+  #cell0 params 
+  track_obj =  Track("./", "cell11", override_results=False)
+  
+  images_dir="/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-p0-cell11"
+  images_prefix ="image11-maxproj.ome_p0_Cell11_cropped.SubFF1" 
+  images_suffix = ".tif"
+  location_file_particle_1 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF1.trk'
+  index_file_particle_1 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF1.trk.new_idelized_traces.txt.hist.txt'
+  
+  location_file_particle_10 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF10.trk'
+  index_file_particle_10 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF10.trk.new_idelized_traces.txt.hist.txt'
+  
+  location_file_particle_11 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF11.trk'
+  index_file_particle_11 = '/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/images/image11-maxproj.ome_p0_Cell11_cropped.SubFF11.trk.new_idelized_traces.txt.hist.txt'
+  
+  params = "/Users/zakigf/src/hpc-projects-2016/003-2016-01-20-dan-larson/registration/param-affine.txt"
+  
+  
+  a = track_obj.preprocess_track_file(location_file_particle_1, index_file_particle_1)
+  b = track_obj.preprocess_track_file(location_file_particle_10, index_file_particle_10)
+  c = track_obj.preprocess_track_file(location_file_particle_11, index_file_particle_11)
+  
+  all_points = np.concatenate((a,b,c))
+  frames = set(all_points[:,0].tolist())
+  frames.remove(1.)
+  
+  
+  #print track_obj.frames_dictionary
+  fixed = str(1).zfill(3)
+  #moving = [str(int(frame_id)).zfill(3) for frame_id in frames[1:,0].tolist()] 
+  moving = [str(int(frame_id)).zfill(3) for frame_id in frames] 
+  
+  float_frame = {}
+  for i in moving :
+    float_frame[i] = fixed 
+  
+  track_obj.register_series_to_single_frame(images_dir, images_prefix , images_suffix, fixed, moving, params, reverse=True)
+  #print track_obj.collect_registered_images_to_single_dir(fixed, moving)
+  
+  #print track_obj.register(fixed,moving, params)
+  track_obj.transform_points(float_frame)
+  df = track_obj.frame_points_to_dataframe('001')
+  print df
+  track_obj.track(df, 500, 30 )
+  #p = DataFrame(data = a, columns = ['frame','x','y'])
+  #track_obj.track(p, 250, 200)
