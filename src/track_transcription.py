@@ -11,8 +11,7 @@ import os
 
 class Track:
 
-  def __init__(self, output_dir , images_dir=None, override_results=False):
-
+  def __init__(self, output_dir, override_results=False):
 
 
     self.output_directory = os.path.abspath(output_dir) 
@@ -21,7 +20,7 @@ class Track:
 
     self.elastix_dir = self.output_directory + '/elastix/' 
     self.transformix_dir = self.output_directory + '/transformix/' 
-    self.images_dir = images_dir
+
 
 
     self.create_dir(self.elastix_dir, override=override_results)
@@ -32,14 +31,11 @@ class Track:
     self.create_dir(self.registration_results)
 
     self.elastix_result_prefix="transform" 
-
-    #This can be retrived from the params file.
+    #This can be retrived from the registration params file.
     self.registered_image_name = "result.0.tif"
 
     """ 
     frames_dictionary has the following structure:
-
-
 
                                           |-->'original_points'(dict)-->point_id(key):index[x,y](value)
                                           | 
@@ -49,6 +45,10 @@ class Track:
     """
     self.frames_dictionary = {} 
     
+    #Initialize the images information
+    self.images_dir = None 
+    self.frame_prefix = None
+    self.frame_suffix = None
 
 
 #####PUBLIC CLASS FUNCTIONS
@@ -279,20 +279,45 @@ class Track:
       shutil.copy(file_name, os.path.join(destination_name, "frame" + str(file_id)))
     return destination_name
 
-  def register_series_to_single_frame(self, images_dir, image_prefix, image_suffix, reference_frame, moving_frames, registration_params, reverse=False):
+  def set_image_information(self, images_dir, frame_prefix, frame_suffix):
+    """Sets the information about the cell frames before registration  
+       Every frame is located at: /path/to/images_dir/<image_prefix><frame_id><image_suffix>
+  
+       Parameters:
+          images_dir: The directory that contains the images files 
+          frame_prefix: The prefix of the frame file 
+          imagee_suffix: The suffix for the frame file 
+    """
+      
+    if images_dir == None:
+      raise Exception ("ERROR: Null value passed to images_dir")
+
+    if not os.path.isdir(images_dir): 
+      raise Exception ("The direcotry {0} does not exist".format(images_dir)) 
+    else:
+      self.images_dir = os.path.abspath(images_dir)
+
+ 
+    if frame_prefix == None or not isinstance(frame_prefix, basestring):
+      raise Exception ("ERROR: frame_prefix should be a null string")
+    self.frame_prefix = frame_prefix 
+
+
+    if frame_suffix == None or not isinstance(frame_suffix, basestring):
+      raise Exception ("ERROR: frame_suffix should be a null string")
+    self.frame_suffix = frame_suffix 
+
+
+  def register_series_to_single_frame(self, reference_frame, moving_frames, registration_params, reverse=False):
     """Register the list of moving_frames to the reference_frame. 
-        The images file name follows the format <image_prefix><frame_id><image_suffix>
+        The images file name follows the format <frame_prefix><frame_id><frame_suffix>
       Parameters:
-        images_dir: The directory that contains the images
-        image_prefix: The prefix of the image
-        image_suffix: The suffix for the image
         reference_frame: The ID of the reference image
         moving_frames: The list of IDs of the float images
         registration_params: Path to the elastix parameters file
         reverse: Switch the registration direction
     """
  
-    self.images_dir = images_dir
 
     moving_list = [str(frame) for frame in moving_frames]
     reference_list = [str(reference_frame)] * len(moving_frames)
@@ -302,10 +327,36 @@ class Track:
       moving_list = reference_list
       reference_list = temp
 
+    self.register_frames(reference_list, moving_list, registration_params)
+
+  def register_frames(self, reference_list, moving_list, registration_params):
+    """Register the moving_list to the reference_list. 
+      Parameters:
+        reference_list: List containing the reference's frame_id(s). 
+        moving_list: List containing the moving frame_id(s).
+        registration_parameters: The registration parameters to be passed to elastix
+ 
+    """
+
+    if self.images_dir == None: 
+      raise Exception ("ERROR:the image_dir is not set ")
+
+    if self.frame_prefix == None: 
+      raise Exception ("ERROR: the frame_prefix is not set ")
+
+    if self.frame_suffix == None:
+      raise Exception ("ERROR: the frame_suffix is not set ")
+
+    if reference_list != None  and moving_list != None:
+      if len(reference_list) != len(moving_list):
+        raise Exception ("ERROR: The length of the reference and moving list should match")
    
+    image_prefix = self.frame_prefix 
+    image_suffix = self.frame_suffix
+
     fixed_images = [os.path.join(self.images_dir,image_prefix + str(frame_id) + image_suffix) for frame_id in reference_list]
     moving_images = [os.path.join(self.images_dir,image_prefix + str(frame_id) + image_suffix) for frame_id in moving_list]
-    params = [registration_params] * len(moving_frames)
+    params = [registration_params] * len(moving_list)
     registration_directories = [self.get_registration_dir(reference_id,moving_id) for reference_id, moving_id in zip(reference_list, moving_list)]
     registration_results_filenames = [self.get_registration_results(fixed, moving) for fixed, moving in zip(reference_list, moving_list)]
     #transformed_images_names = [self.get_transformed_image(fixed, moving) for fixed, moving in zip (reference_list, moving_list)] 
@@ -328,7 +379,6 @@ class Track:
     for registration in range(len(work_list)):
       async_result = pool.apply_async(self.register, work_list[registration])
       async_results.append(async_result)
-
 
     for registration in range(len(work_list)):
       transformed_image, registration_solution = async_results[registration].get()
