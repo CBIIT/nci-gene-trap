@@ -13,23 +13,20 @@ class Track:
 
   def __init__(self, output_dir, override_results=False):
 
-
+    #work directory 
     self.output_directory = os.path.abspath(output_dir) 
-
     self.create_dir(self.output_directory, override=override_results)
 
     self.elastix_dir = self.output_directory + '/elastix/' 
     self.transformix_dir = self.output_directory + '/transformix/' 
 
-
-
     self.create_dir(self.elastix_dir, override=override_results)
     self.create_dir(self.transformix_dir, override=override_results)
-
 
     self.registration_results = os.path.join(self.elastix_dir, 'registration_results') 
     self.create_dir(self.registration_results)
 
+    #Elastics convensions.
     self.elastix_result_prefix="transform" 
     #This can be retrived from the registration params file.
     self.registered_image_name = "result.0.tif"
@@ -49,6 +46,11 @@ class Track:
     self.images_dir = None 
     self.frame_prefix = None
     self.frame_suffix = None
+
+
+    #Transcription point can be either index of point
+    #It should be set when points are added
+    self.point_index = None 
 
 
 #####PUBLIC CLASS FUNCTIONS
@@ -184,8 +186,12 @@ class Track:
 
     #self.create_dir(transform_directory)
     #input_points_file_name = os.path.join(transform_directory, "input_points.txt")
+
+    if self.point_index == None:
+      raise Exception ("ERROR: point_index should be set before calling transformix")
+
     input_points_file = open(destination_file, 'w')
-    input_points_file.write('index\n')
+    input_points_file.write(self.point_index + '\n')
     input_points_file.write(str(len(points)) + '\n')
 
     for point in points:
@@ -475,7 +481,7 @@ class Track:
           distance: search range between frames for the movement of one object
     """
     t = tp.link_df(np_array,search_range = distance, memory = memory)
-    tp.plot_traj(t)
+    #tp.plot_traj(t)
 
 
 ###PRIVATE CLASS FUNCTIONS   
@@ -567,22 +573,49 @@ class Track:
     return os.path.join(self.transformix_dir,  str(fixed_id) + "-" + str(float_id))
 
 
+  def set_point_index(self, point_index): 
+    """Set the type of points for the object
+      Parameters:
+        point_index: A string that can be either "point" for physical points or "index" for image indexes
+    """
+
+    if point_index != "index" and point_index != "point":
+      raise Exception ("ERROR: The point_index variable should be either 'point' or 'index'  ")
+    else:
+      self.point_index = point_index
+
   def find_points_from_transformix_output(self,file_name):
     """Finds output points in a transformix outputpoints.txt file
       Parameters:
         file_name: Transformix outputpoints.txt file
+        point_index: Match the either the point or the index. Possible values are "index" or "point"  
 
       Returns:
         ouptut_points: A 2D list of points    size 2 list
     """
     
     self.check_file(file_name)
-    points_file = open(file_name)
-    a = re.findall("OutputIndexFixed\s*=\s*\[\s*[0-9]*\s*[0-9]*\s*\]", points_file.read())
-    output_points = []
-    for k in range(len(a)):
-      output_points.append([int(s) for s in a[k].split() if s.isdigit()])
+    if self.point_index == None:
+      raise Exception ("ERROR: point_index should be set before calling transformix")
 
+    point_index = self.point_index
+    points_file = open(file_name)
+    if point_index ==  "index":
+      regex = re.compile(".*OutputIndexFixed\s*=\s*\[\s*(?P<x>[0-9]*)\s*(?P<y>[0-9]*)\s*\]")
+    else:
+      regex = re.compile(".*OutputPoint\s*=\s*\[\s*(?P<x>\d+\.\d+)\s*(?P<y>\d+\.\d+)\s*\]") 
+
+    results = regex.findall(points_file.read()) 
+
+    #Parse the results
+    output_points = []
+    for result in results: 
+      if point_index ==  "index":
+        output_points.append([int(result[0]) , int(result[1])])
+      else:
+        output_points.append([float(result[0]) ,  float(result[1])])
+      
+    points_file.close() 
     return output_points
 
 
