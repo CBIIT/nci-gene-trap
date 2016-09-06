@@ -34,7 +34,11 @@ class Track:
     """ 
     frames_dictionary has the following structure:
 
-                                          |-->'original_points'(dict)-->point_id(key):index[x,y](value)
+                                                                                      |->result_tag(string):value #The group id provided by the tracking method.
+                                                                                      |
+                                                                                      |->original_group_id(key):value(int) #The ground truth group id.
+                                                                                      |
+                                          |-->'original_points'(dict)-->point_id(dict)-->index(key):index[x,y](value)
                                           | 
     frames_dictionary-->frame_id(dict)--->|-->'transformed_points'(dict)-->original_frame_id(dict)-->point_id(key):index[x,y](value)
                                           |
@@ -55,12 +59,14 @@ class Track:
 
 #####PUBLIC CLASS FUNCTIONS
 
-  def preprocess_track_file(self, track, index): 
+  def preprocess_track_file(self, track, index, original_group_id = None): 
     """Create a numpy array that contains the frame numer and location of the object in only the frames where the object was physically present
 
         Parameters: 
         track: file that indicates the spacial location of the object in each frame
         index: file that indicates which objects are physically present in each frame
+        original_group_id: Add a group id for the points that will be added. 
+                           This will be useful to evaluate the tracking results 
 
 
         Returns:
@@ -92,7 +98,7 @@ class Track:
     for row in positions:
       frame_id, x, y = row   
       frame_id = str(int(frame_id)).zfill(3)
-      self.add_original_point_to_dictionary(frame_id, [x, y])
+      self.add_original_point_to_dictionary(frame_id, [x, y], original_group_id)
 
     return positions
 
@@ -116,37 +122,13 @@ class Track:
       if not os.path.isfile(registration_result):
         raise Exception ("The registration result file {0} does not exists".format(registration_result))
 
-
-      #Get the points in the frame (original and transformed)
-      original_points = {}
-      transformed_points = {}
-      if ref_id in self.frames_dictionary: 
-        if "original_points" in self.frames_dictionary[ref_id]:
-          original_points =  self.frames_dictionary[ref_id]['original_points']
-        if 'transformed_points' in self.frames_dictionary[ref_id]:
-          transformed_points = self.frames_dictionary[ref_id]['transformed_points']
-
-
-      #Loop over original and transformed to create the list of points
-      points_indexes_list = []
-      original_frame_id_list = []
-      point_id_list = []
-      n_points = len(original_points)
-
-      for  point_id, indexes in original_points.items(): 
-        points_indexes_list.append(indexes)
-        original_frame_id_list.append(ref_id)
-        point_id_list.append(point_id) 
-
-      for original_frame_id, points_id in transformed_points.items():
-        n_points += len(points_id)
-        for point, indexes in points_id.items(): 
-          points_indexes_list.append(indexes)
-          original_frame_id_list.append(original_frame_id)
-          point_id_list.append(point) 
-
-
-      if n_points > 0: 
+      original_points = self.get_original_points(ref_id)
+      transformed_points = self.get_transformed_points(ref_id)
+      points_to_be_transformed = original_points + transformed_points
+   
+      if points_to_be_transformed != None:
+        n_points = len(points_to_be_transformed)
+        points_indexes_list = [ point_info[2] for point_info in points_to_be_transformed ]
 
         #Create the input file
         frame_input_file = os.path.join(input_files_dir,"input_points" + ref_id + "-" + float_frame[ref_id] + ".txt")
@@ -169,9 +151,14 @@ class Track:
  
 
         #Write the results back in the dictionary 
-        for original_frame_id, point_id, transformed_indexes in zip(original_frame_id_list, point_id_list, output_points):
+
+        for original_point, transformed_indexes in zip(points_to_be_transformed,  output_points):
+          original_frame_id = original_point[0]
+          point_id = original_point[1]
           self.add_transformed_point_to_dictionary(float_id, original_frame_id, point_id, transformed_indexes)
 
+        #for original_frame_id, point_id, transformed_indexes in points_to_be_transformed:#zip(original_frame_id_list, point_id_list, output_points):
+        #  self.add_transformed_point_to_dictionary(float_id, original_frame_id, point_id, transformed_indexes)
 
       else:
         print "WARNING: there is no points to be transformed for frame_id {0}.".format(ref_id)
@@ -481,7 +468,7 @@ class Track:
           distance: search range between frames for the movement of one object
     """
     t = tp.link_df(np_array,search_range = distance, memory = memory)
-    #tp.plot_traj(t)
+    tp.plot_traj(t)
 
 
 ###PRIVATE CLASS FUNCTIONS   
@@ -648,11 +635,12 @@ class Track:
     self.frames_dictionary[dest_frame_id]['transformed_points'][original_frame_id][point_id] = indexes  
 
 
-  def add_original_point_to_dictionary(self, original_frame_id, indexes):
+  def add_original_point_to_dictionary(self, original_frame_id, indexes, original_group_id = None):
     """Adds an original point to the frames_dictionary.
       Parameters:
         original_frame_id: The original frame where the point belongs. 
         indexes: the indexes of the point in the destination frame id.
+        original_group_id: The original group id that the point belongs too
     """
 
     #Make sure indexes contains two number for X and Y.
@@ -670,7 +658,15 @@ class Track:
     #Increament 
     self.frames_dictionary[original_frame_id]['n_points'] += 1
     point_id = self.frames_dictionary[original_frame_id]['n_points']
-    self.frames_dictionary[original_frame_id]['original_points'][point_id] = indexes  
+
+    if not point_id in self.frames_dictionary[original_frame_id]['original_points']:
+      self.frames_dictionary[original_frame_id]['original_points'][point_id] = {}
+
+    self.frames_dictionary[original_frame_id]['original_points'][point_id]['indexes'] = indexes  
+
+    if original_group_id != None:
+      self.frames_dictionary[original_frame_id]['original_points'][point_id]['original_group_id'] = original_group_id
+
 
 
   def frame_points_to_dataframe(self, frame_id):
@@ -685,25 +681,18 @@ class Track:
     if frame_id == None: 
       raise Exception ("Invalid frame_id")
 
-    #frame_id should be converted to int for trackpy
-    int_frame_id = int(frame_id)
-
     if not frame_id in self.frames_dictionary:
       print "WARNING: the frame_id {0} is not part of the frames dictionary"
       return None
 
     temp_np = np.empty((0,4))
-    #Add original points
-    if 'original_points' in  self.frames_dictionary[frame_id]:
-      for point_id , indexes in self.frames_dictionary[frame_id]['original_points'].items():
-        temp_np = np.append(temp_np,[[int_frame_id,indexes[0], indexes[1], point_id]], axis=0)
-          
-    #Add transformed points
-    if 'transformed_points' in  self.frames_dictionary[frame_id]:
-      for original_frame_id , points_ids in self.frames_dictionary[frame_id]['transformed_points'].items():
-        for point_id , indexes in self.frames_dictionary[frame_id]['transformed_points'][original_frame_id].items():
-          temp_np = np.append(temp_np,[[int(original_frame_id),indexes[0], indexes[1], point_id]], axis=0)
 
+    original_points = self.get_original_points(frame_id)
+    transformed_points = self.get_transformed_points(frame_id)
+    frame_points = original_points + transformed_points
+
+    for frame_id, point_id, indexes in frame_points:
+        temp_np = np.append(temp_np,[[int(frame_id),indexes[0], indexes[1], point_id]], axis=0)
   
     if temp_np.shape[0] == 0:
       return None
@@ -711,4 +700,320 @@ class Track:
       return DataFrame(data = temp_np, columns = ['frame', 'x', 'y', 'particle_id'])
 
     return temp_np
+
+
+  def get_original_points(self, frame_id):
+    """Generate a list of tuples in the form (frame_id, point_id, indexes) for the original points in a given frame_id
+       Parameters:
+          frame_id: The ID of the frame where the points will be colleceted
+
+       Returns:
+          original_points_list: List of tuples in the form (frame_id, point_id, indexes)
+
+    """
+
+    if frame_id == None: 
+      raise Exception ("Invalid frame_id")
+
+    original_points_list = []
+
+    if not frame_id in self.frames_dictionary:
+      #print "WARNING: the frame_id {0} is not part of the frames dictionary"
+      return original_points_list
+
+    if 'original_points' in  self.frames_dictionary[frame_id]:
+      for point_id in self.frames_dictionary[frame_id]['original_points'].keys():
+        indexes = self.frames_dictionary[frame_id]['original_points'][point_id]['indexes']
+        original_points_list.append((frame_id, point_id, indexes))
+
+    return original_points_list
+          
+  def get_transformed_points(self, frame_id):
+    """Generate a list of tuples in the form (frame_id, point_id, indexes) for the transformed points in a given frame_id
+       Parameters:
+          frame_id: The ID of the frame where the points will be colleceted
+
+       Returns:
+          transformed_points_list: List of tuples in the form (frame_id, point_id, indexes)
+
+    """
+
+    if frame_id == None: 
+      raise Exception ("Invalid frame_id")
+
+    transformed_points_list = []
+
+    if not frame_id in self.frames_dictionary:
+      #print "WARNING: the frame_id {0} is not part of the frames dictionary"
+      return transformed_points_list 
+
+    #Add transformed points
+    if 'transformed_points' in  self.frames_dictionary[frame_id]:
+      for original_frame_id in self.frames_dictionary[frame_id]['transformed_points'].keys():
+        for point_id , indexes in self.frames_dictionary[frame_id]['transformed_points'][original_frame_id].items():
+          transformed_points_list.append((original_frame_id,point_id, indexes))
+          
+    return transformed_points_list 
+
+  def add_track_result(self, frame_id, point_id, result_tag, result_id):
+    """ Add to the dictionary the results information
+        Parametes:
+          frame_id: The original frame where the point belongs
+          point_id: The original id of the point
+          result_tag(string): The tag for the tracking operation
+          result_id(int): The object_id the tracking operation gave to the point
+    """
+
+    if not frame_id in self.frames_dictionary:
+      raise Exception("ERROR: Adding a result to non exisiting frame")
+
+    if not 'original_points' in  self.frames_dictionary[frame_id]:
+      raise Exception("ERROR: frame_id contains no points")
+
+    if not point_id in self.frames_dictionary[frame_id]['original_points']:
+      raise Exception("ERROR: Adding a result to non exisiting point")
+
+    if not result_tag or not isinstance(result_tag, basestring):
+      raise Exception("ERROR: results_tag should be a non empty string")
+
+    if not isinstance(result_id, int):
+      raise Exception("ERROR: result_id should be an interger")
+
+    self.frames_dictionary[frame_id]['original_points'][point_id][result_tag] = result_id
+
+  def track_results_to_dictionary(self, tracking_results, result_tag): 
+    """ Extrack the tracking results and add them to the dictionary
+        Parameters:
+          tracking_results: The resultant data_frame from the tracking algorithm
+          result_tag: A string to represent that result
+    """
+
+    #Make sure the result_tag is not an empty  
+    if not result_tag or not isinstance(result_tag, basestring):
+      raise Exception("ERROR: results_tag should be a non empty string")
+
+    #Make sure the data_frame has the correct type:
+    if not isinstance(tracking_results,pd.DataFrame):
+      raise Exception("ERROR: tracking_results should be of type DataFrame")
+
+
+    if not "particle" in tracking_results:
+      raise Exception ("ERROR: the tracking_results do not contain the 'particle' column")
+ 
+
+    for index, row in tracking_results.iterrows(): 
+      frame_id = str(int(row['frame'])).zfill(3)
+      point_id = int(row['particle_id'])
+      result_particle_id = int(row['particle'])
+      self.add_track_result(frame_id, point_id, result_tag, result_particle_id)
+
+  def assess_tracking_result(self, original_id, result_tag, verbose=False):     
+    """ Check the tracking result a given particle across the frames
+        The function prints if the tracking algorithm returned the same id for all the 
+        particle activation and where it missed.
+        Parameters:
+          original_id(int): The original id of the particle
+          result_tag(string): The tag given for the tracking method 
+          verbose: Print extra information 
+    """
+
+    #Make sure the result_tag is not an empty  
+    if not result_tag or not isinstance(result_tag, basestring):
+      raise Exception("ERROR: results_tag should be a non empty string")
+
+    if not isinstance(original_id, int):
+      raise Exception("ERROR: the original_id should be of type integer")
+    
+    #Track list for the points that have the same original_group_id 
+    original_tracking_list = []  
+
+    #Track list for the points that have different id than the original_group_id 
+    other_points_list = []  
+
+    dic = self.frames_dictionary
+    #Loop over all the point to retrieve the tracking results
+    for  frame_id in dic:
+      if 'original_points' in dic[frame_id]:
+        for point_id in dic[frame_id]['original_points'].keys():
+          if 'original_group_id' in dic[frame_id]['original_points'][point_id]:
+              original_particle_id = dic[frame_id]['original_points'][point_id]['original_group_id']
+              if original_particle_id == original_id:
+                if result_tag in dic[frame_id]['original_points'][point_id]:
+                  new_track_id = dic[frame_id]['original_points'][point_id][result_tag]
+                  original_tracking_list.append((frame_id, point_id,new_track_id)) 
+                else:    
+                  raise Exception("ERROR: No {0} found for frame:{1}, particle{2}".format(result_tag, frame_id, point_id))
+              elif result_tag in dic[frame_id]['original_points'][point_id]:
+                new_track_id = dic[frame_id]['original_points'][point_id][result_tag]
+                other_points_list.append((frame_id, point_id, new_track_id))
+
+
+    #Get the list and frequency of new_track_id
+    frequency= {}
+    if len(original_tracking_list) == 0: 
+      print "ERROR: No {0} points found".format(original_id)
+      return 
+
+    for point in original_tracking_list: 
+      if not point[2] in frequency:
+        frequency[point[2]] = 1
+      else:        
+        frequency[point[2]] += 1
+
+    #Get the new particle_id with the maximum frequency
+    maximum = 0
+    track_id = -1 
+    for particle, rate in frequency.items():
+      if rate > maximum:
+        track_id = particle
+        maximum = rate
+
+    print "The track result id for the original particle {0} is {1}".format(original_id, track_id)
+    nb_false_neg = 0  
+    
+    #Get the points that was not added to the same track_id 
+    for entry in original_tracking_list: 
+      if entry[2] != track_id:  
+        nb_false_neg +=1 
+        if verbose:
+          print "WARNING:Frame{0} point{1} got a different group id ".format(entry[0], entry[1])
+
+
+    nb_false_pos = 0
+    #Get the points form a different group that got the same track_id 
+    for entry in other_points_list: 
+      if entry[2] == track_id:  
+        nb_false_pos +=1
+        if verbose:
+          print "WARNING:Frame{0} point{1} got wrongly added to the group ".format(entry[0], entry[1])
+
+    print "There exists {0} points for original_id:{1}. Tracker miscalculated {2} points, \
+    and added to the group {3} points".format(len(original_tracking_list), original_id, nb_false_neg, nb_false_pos)  
+
+
+
+  def iterative_tracking(self, destination, stride, frames_ids, params):
+    """ Iteratevely transform the frames the destination frame using strides    
+        A list of pilot frames which ID are distanted  n * stride from the destination will be constructed.  
+        Every frame is registrared to the nearest pilot frame in the direction of the final destination. 
+        Then the pilots will be registred to each other to move all the points to the final destination frame space.
+        The function will update the frames dictionary with the transformed points 
+        Parametes:
+          destination(int): The id of the destination frame
+          stride(positive integer): The stride to take in transforming the points in every frame to the destination frame. 
+          frames_ids(list): List of frames that contains trascription points
+          params: The registration parameters
+    """ 
+    
+    #Get the registration pairs
+    frames2pilots, upper_p2p, lower_p2p = self.get_iterative_registration_pairs(destination, stride, frames_ids) 
+
+    reg_list = frames2pilots + upper_p2p + lower_p2p
+    
+    fixed_list = [self.id2str(pair[0]) for pair in reg_list]
+    moving_list = [self.id2str(pair[1]) for pair in reg_list]
+ 
+    #Run the registrations
+    self.register_frames(fixed_list, moving_list, params)
+
+    #Run the frames to pilots transformations
+    for fixed, moving in frames2pilots:
+      trans_dic = {}
+      trans_dic[self.id2str(fixed)] = self.id2str(moving)
+      self.transform_points(trans_dic)
+      
+    #Run the pilots to pilots transformations
+    for fixed, moving in upper_p2p + lower_p2p:
+      trans_dic = {}
+      trans_dic[self.id2str(fixed)] = self.id2str(moving)
+      self.transform_points(trans_dic)
+
+  def get_iterative_registration_pairs(self, destination, stride, frames_ids):
+    """ Returns three list of tuples showing the reference and float frames ids that should be registered and transformed.
+        Parametes:
+          Similar to iterative tracking. 
+
+        Returns:
+          [frames_to_pilots_list, upper_pilot_to_pilot_list, lower_pilot_to_pilot_list]
+          frames_to_pilots_list: list of frame ids and the closest pilot frame it should register to
+          upper_pilot_to_pilot_list:  Ordered list for the pilot to pilot registration for pilot frame_id > destination
+          lower_pilot_to_pilot_list:  Ordered list for the pilot to pilot registration for pilot frame_id < destination
+    """
+
+    if not isinstance(destination, int):
+      raise Exception("ERROR: The destination frame id should be an integer.")
+
+    if destination  < 0 :
+      raise Exception("ERROR: The destination frame id should be a non negative integer.")
+
+    if not isinstance(stride, int):        
+      raise Exception("ERROR: The stride should be an integer.")
+
+    if stride <= 0:
+      raise Exception("ERROR: The stride should be a positive integer.")
+           
+    if not all(isinstance(x, int) and x >= 0 for x in frames_ids):
+      raise Exception("ERROR: All the frames_ids should be  positive integer.")
+
+
+    #Get the ids of the pilot frames
+    frames_array = np.asarray(frames_ids)
+    lower_ids = frames_array[frames_array < destination]       
+    upper_ids = frames_array[frames_array > destination]
+    
+    lower_steps = (destination  - lower_ids) / stride
+    lower_float = destination - lower_steps * stride
+    
+    upper_steps = (upper_ids - destination) / stride
+    upper_float = destination +  upper_steps * stride
+
+
+    frames_to_pilots_list = [] 
+    pairs = zip(lower_ids, lower_float) + zip(upper_ids, upper_float) 
+
+    #Register the pairs that have different fixed and float ids
+    for fixed_frame, float_frame in pairs:
+      if fixed_frame != float_frame:
+        frames_to_pilots_list.append((fixed_frame, float_frame))
+
+
+    min_frame = min(frames_array)
+    max_frame = max(frames_array)
+
+    upper_pilot_to_pilot_list = [] 
+    #Register the upper pilots iteratively
+    if max_frame > destination:
+      max_pilot = destination + ((max_frame - destination) / stride) * stride
+      upper_ref_pilots = range(max_pilot, destination, -stride)             
+      upper_flt_pilots = range(max_pilot - stride, destination-1, -stride)
+      for fixed_frame, float_frame in zip(upper_ref_pilots, upper_flt_pilots):
+        upper_pilot_to_pilot_list.append((fixed_frame, float_frame))
+
+
+    lower_pilot_to_pilot_list = [] 
+    if min_frame < destination:
+      min_pilot =  destination - ((destination - min_frame) / stride) * stride
+      lower_ref_pilots = range(min_pilot, destination, stride )
+      lower_flt_pilots = range(min_pilot + stride, destination + 1, stride)
+      for fixed_frame, float_frame in zip(lower_ref_pilots, lower_flt_pilots):
+        lower_pilot_to_pilot_list.append((fixed_frame, float_frame))
+
+    return [frames_to_pilots_list, upper_pilot_to_pilot_list, lower_pilot_to_pilot_list]
+
+
+  def id2str(self, int_id, zero_fill=None):
+    """ Convert the integer frame id to a string with the appropriate zero fill digits
+        Parameters: 
+          int_id: The integer frame id
+
+        Return:
+          str_id: The id converted to string with the approprite number of zero fills
+    """
+    if (not isinstance(int_id, int)) or int_id < 0:
+      raise Exception("ERROR the frame id should be positive integer. Got {0}".format(int_id)) 
+
+    if zero_fill != None:
+      return str(int_id).zfill(zero_fill)
+    else:
+      return  str(int_id).zfill(3)
 
