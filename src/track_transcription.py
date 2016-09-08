@@ -236,7 +236,7 @@ class Track:
     status = os.system(transformix_call)
    
     if status != 0:
-      raise Exception ('ERROR: The transformix call "{0}" returned with code {1}'.format(elastix_call, status))
+      raise Exception ('ERROR: The transformix call "{0}" returned with code {1}'.format(transformix_call, status))
     else: 
       transformed_points =  os.path.join(output_dir, "outputpoints.txt" ) 
          
@@ -268,8 +268,9 @@ class Track:
     results_files = [os.path.join(self.get_registration_dir(reference_id,moving_id), self.registered_image_name)  for reference_id, moving_id in zip(reference_list, moving_frames_ids)]
     for file_name, file_id in zip(results_files, moving_frames_ids) :
       if not os.path.exists(file_name):
-        raise Exception('ERROR: The file "{0}" does not exist.'.format(file_name))
-      shutil.copy(file_name, os.path.join(destination_name, "frame" + str(file_id)))
+        print 'WARNING: The file "{0}" does not exist.'.format(file_name)
+      else:
+        shutil.copy(file_name, os.path.join(destination_name, "frame" + str(file_id)))
     return destination_name
 
   def set_image_information(self, images_dir, frame_prefix, frame_suffix):
@@ -363,7 +364,7 @@ class Track:
       if not os.path.isfile(self.get_registration_results(fixed, moving)):
         work_list.append(arguments)
 
-    print len(work_list)
+    print "Registering {0} pairs.".format(len(work_list))
     from multiprocessing.pool import ThreadPool
     nthreads = multiprocessing.cpu_count()
     print "nthreads = " + str(nthreads)
