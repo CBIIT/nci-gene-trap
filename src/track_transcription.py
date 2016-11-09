@@ -8,6 +8,9 @@ import shutil
 import threading
 import multiprocessing
 import os
+import csv 
+import math
+import glob
 
 class Track:
 
@@ -62,15 +65,14 @@ class Track:
   def preprocess_track_file(self, track, index, original_group_id = None): 
     """Create a numpy array that contains the frame numer and location of the object in only the frames where the object was physically present
 
-        Parameters: 
-        track: file that indicates the spacial location of the object in each frame
-        index: file that indicates which objects are physically present in each frame
-        original_group_id: Add a group id for the points that will be added. 
-                           This will be useful to evaluate the tracking results 
+        Args: 
+          track: file that indicates the spacial location of the object in each frame.
+          index: file that indicates which objects are physically present in each frame.
+          original_group_id: Add a group id for the points that will be added. This will be useful to evaluate the tracking results 
 
 
         Returns:
-        [length(file),3] np array
+        [length(file),3] np array.
     """
     self.check_file(index)
     index_file = open(index)
@@ -102,6 +104,62 @@ class Track:
 
     return positions
 
+
+  def preprocess_rna_segmentation(self, segmentations, voxel_size, image_dimensions): 
+    """Create a numpy array that contains the frame number and location of the RNA spot from a csv file.
+       The first column of the CSV file should be the frame number.
+       The second column is the X position in physical coordinates.  
+       The third column should be the Y position in physical coordinates.
+        
+       All non numeric rows will be ignored.
+
+       Parameters: 
+        track: file that contains the segmented spots in the format mentiond above. 
+        voxel_size: A tuple containing the spacing between two pixels in the image.
+        image_dimensions: A tuple containing the dimensions of the frames.
+       
+       Retruns:
+        A list of frame_ids where the spots are segmented
+    """
+
+    #Check that the input file can be read   
+    frames_list = []
+
+    if (not isinstance(voxel_size[0], float)) and (not isinstance(voxel_size[0], int)):
+      if (not isinstance(voxel_size[1], float)) and (not isinstance(voxel_size[1], int)):
+        raise Exception("The voxel size should be int or float")
+
+    if voxel_size[0] <= 0 or voxel_size[1] <= 0:
+      raise Exception ("The voxel size should be a positive number")
+
+
+    if (not isinstance(image_dimensions[0], int)) or (not isinstance(image_dimensions[1], int)):
+      raise Exception ("The image dimensions should be integers")
+
+    if image_dimensions[0] <= 0 or image_dimensions[1] <= 0:
+      raise Exception ("The image dimensions should be positive integers")
+
+    csv_file = open(segmentations, 'r')
+    segmented_spots = csv.reader(csv_file)  
+
+    row_id = 1 
+    for row in segmented_spots:
+      if str.isdigit(row[0].replace('.',"")):
+        frame_id = int(float(row[0]))    
+        x = int(float(row[1])/ voxel_size[0])
+        y = int(float(row[2])/ voxel_size[1])
+
+        if x > image_dimensions[0]:
+          raise Exception("Error in {0} row {1}, the physical coordinate x={2} can not exceed the image size {3}.".format(segmentations, row_id, x, image_dimensions[0]))
+
+        if y > image_dimensions[1]:
+          raise Exception("Error in {0} row {1}, the physical coordinate y={2} can not exceed the image size {3}.".format(segmentations, row_id, y, image_dimensions[1]))
+        
+        frames_list.append([frame_id, x, y])
+        self.add_original_point_to_dictionary(frame_id, [x, y])
+      row_id = row_id + 1
+
+    return frames_list
 
   def transform_points(self, float_frame):
     """Transform the points using transfromix 
@@ -147,7 +205,8 @@ class Track:
         n_transformed_points = len(output_points)
         
         if n_transformed_points != n_points:
-          raise Exception ("ERROR: The number of transformed points {0} does not equal the number of input points {1}".format(n_transformed_points, n_poinst))
+          raise Exception ("ERROR: The number of transformed points {0} does not equal the number of input points {1}.\n Output points file:{2}"\
+            .format(n_transformed_points, n_points, output_points_file))
  
 
         #Write the results back in the dictionary 
@@ -469,7 +528,7 @@ class Track:
           distance: search range between frames for the movement of one object
     """
     t = tp.link_df(np_array,search_range = distance, memory = memory)
-    tp.plot_traj(t)
+    #tp.plot_traj(t)
 
 
 ###PRIVATE CLASS FUNCTIONS   
@@ -503,9 +562,10 @@ class Track:
 
 
   def create_dir(self, dir_name, override=False):
-    """Creates a directory even if it exists 
+    """Creates a directory  
       Prameters:
-        dir_name: The directory path
+        dir_name: The directory path.
+        override: Remove the directory if it exists before creating it.
 
     """
 
@@ -589,9 +649,9 @@ class Track:
     point_index = self.point_index
     points_file = open(file_name)
     if point_index ==  "index":
-      regex = re.compile(".*OutputIndexFixed\s*=\s*\[\s*(?P<x>[0-9]*)\s*(?P<y>[0-9]*)\s*\]")
+      regex = re.compile(".*OutputIndexFixed\s*=\s*\[\s*(?P<x>[-+]?[0-9]*)\s*(?P<y>[-+]?[0-9]*)\s*\]")
     else:
-      regex = re.compile(".*OutputPoint\s*=\s*\[\s*(?P<x>\d+\.\d+)\s*(?P<y>\d+\.\d+)\s*\]") 
+      regex = re.compile(".*OutputPoint\s*=\s*\[\s*(?P<x>[-+]?\d+\.\d+)\s*(?P<y>[-+]?\d+\.\d+)\s*\]") 
 
     results = regex.findall(points_file.read()) 
 
@@ -636,10 +696,10 @@ class Track:
     self.frames_dictionary[dest_frame_id]['transformed_points'][original_frame_id][point_id] = indexes  
 
 
-  def add_original_point_to_dictionary(self, original_frame_id, indexes, original_group_id = None):
+  def add_original_point_to_dictionary(self, original_frame_id_raw, indexes, original_group_id = None):
     """Adds an original point to the frames_dictionary.
       Parameters:
-        original_frame_id: The original frame where the point belongs. 
+        original_frame_id_raw: The original frame where the point belongs. 
         indexes: the indexes of the point in the destination frame id.
         original_group_id: The original group id that the point belongs too
     """
@@ -648,7 +708,11 @@ class Track:
     if len(indexes) != 2:
       print indexes
       raise Exception ("ERROR: the lenght of indexes does not equal 2.")
-    
+ 
+
+    #Get the integer and consistantly add the zero fill 
+    original_frame_id = self.id2str(original_frame_id_raw)
+
     if not original_frame_id in self.frames_dictionary:
       self.frames_dictionary[original_frame_id] = {}
 
@@ -683,7 +747,7 @@ class Track:
       raise Exception ("Invalid frame_id")
 
     if not frame_id in self.frames_dictionary:
-      print "WARNING: the frame_id {0} is not part of the frames dictionary"
+      print "WARNING: the frame_id {0} is not part of the frames dictionary".format(frame_id)
       return None
 
     temp_np = np.empty((0,4))
@@ -1003,13 +1067,17 @@ class Track:
 
 
   def id2str(self, int_id, zero_fill=None):
-    """ Convert the integer frame id to a string with the appropriate zero fill digits
+    """ Convert the frame id to a string with the appropriate zero fill digits
         Parameters: 
-          int_id: The integer frame id
+          int_id: The integer frame id (can be string too)
 
         Return:
           str_id: The id converted to string with the approprite number of zero fills
     """
+    
+    if isinstance(int_id, str):
+      int_id = int(int_id)
+
     if (not isinstance(int_id, int)) or int_id < 0:
       raise Exception("ERROR the frame id should be positive integer. Got {0}".format(int_id)) 
 
@@ -1018,3 +1086,112 @@ class Track:
     else:
       return  str(int_id).zfill(3)
 
+  def overlay_tracking_results(self, destination_dir, tracking_results, alpha_in = 0.40):
+    """ Assign a color for every set of tracked transcription points and overlay 
+        a circle around the points in the corresponding original frame. 
+
+
+        Parameters:
+          destination_dir: The directory to save overlayed image series 
+          tracking_results: The dataframe that includes the tracking results. 
+            It should has the columns: frame, x, y, and particle.
+          alpha: the transparance of the circles. It should be between 0 and 1. 
+  """
+
+    from matplotlib import cm
+    from PIL import Image, ImageDraw, ImageFont
+
+    #Make sure the data_frame has the correct type:
+    if not isinstance(tracking_results,pd.DataFrame):
+      raise Exception("ERROR: tracking_results should be of type DataFrame")
+
+    if not "particle" in tracking_results:
+      raise Exception ("ERROR: the tracking_results do not contain the 'particle' column")
+
+    if not "frame" in tracking_results:
+      raise Exception ("ERROR: the tracking_results do not contain the 'frame' column")
+
+    if not "x" in tracking_results:
+      raise Exception ("ERROR: the tracking_results do not contain the 'x' column")
+
+    if not "y" in tracking_results:
+      raise Exception ("ERROR: the tracking_results do not contain the 'y' column")
+
+    if alpha_in < 0 or alpha_in > 1: 
+      raise Exception ("ERROR: alpha_in should be between 0 and 1")
+      
+
+    self.create_dir(destination_dir)
+
+    tr = tracking_results
+    # The number of particles 
+    #n_particles =  len(set(tr['particle'].tolist()))
+    particles_ids =  tr.particle.unique().tolist()
+    n_particles = len(particles_ids)
+
+    color_step =  255  / float(n_particles) 
+
+    #Distribute the colour over the 255 range for the color map
+    streched_ids = [ int(math.floor(float(set_id) * color_step)) for set_id in range (0,n_particles)] 
+    print streched_ids
+    scalar_color = [  cm.Accent(s_id, bytes=True, alpha = alpha_in) for s_id in streched_ids] 
+    rgb_color_map = [ (particle, scalar_color[set_id]) \
+      for particle, set_id in zip(particles_ids, range(0, n_particles))] 
+    color_dict = dict(rgb_color_map)
+   
+    #define a font
+    fnt = ImageFont.load_default()
+
+    images_regex= self.frame_prefix + "*" + self.frame_suffix
+    image_files = glob.glob(os.path.join(self.images_dir,images_regex))
+
+    file_regex = re.compile(".*" + self.frame_prefix + "(?P<id>[0-9]*)" + self.frame_suffix)
+    for frame in image_files:
+      #Get the frame id:
+      frame_id = file_regex.search(frame).groupdict()['id'] 
+      original_frame_points = self.get_original_points(self.id2str(frame_id))
+
+      #A list of tuples that will contains the information about the particles in a given frame
+      points_color_information = []
+
+      #Get the particles in that frame and get the corresponding color information
+      for original_frame_id, point_id, indexes in original_frame_points:
+
+        mapped_particle_row = tr[(tr.frame == int(frame_id)) & (tr.particle_id == point_id)]
+
+        #Double check that we have only one particle with a given point_id in a frame
+        if mapped_particle_row.shape[0] != 1:  
+          raise Exception ("Error got more than one particle with the same id in one frame")
+
+        mapped_particle_id = mapped_particle_row.iloc[0].particle
+        points_color_information.append((color_dict[mapped_particle_id], indexes, mapped_particle_id))
+
+            
+    
+      #Convert to frame to  RGBA
+      orig_frame_image = Image.open(frame)
+      rgba_frame = Image.new("RGBA", orig_frame_image.size)
+      rgba_frame.paste(orig_frame_image)
+      contours_frame = Image.new('RGBA', rgba_frame.size, (255, 255, 255, 0))
+      draw= ImageDraw.Draw(contours_frame)
+
+      # Create a colored circle around every point  
+      for color, indexes, mapped_id in  points_color_information: 
+        top_x = indexes[0] - 10
+        top_y = indexes[1] -10
+        bottom_x = indexes[0] + 10 
+        bottom_y = indexes[1] + 10 
+        draw.ellipse((top_x, top_y, bottom_x , bottom_y), outline=color)
+
+        # typethe particle id at the lower corner
+        draw.text((bottom_x,bottom_y), str(int(mapped_id)), font=fnt, fill=color)
+
+      #Blend the original image with the contours
+      out = Image.alpha_composite(rgba_frame, contours_frame)
+
+      # Save the new file in the output directory
+      out.save(os.path.join(destination_dir,os.path.basename(frame)))
+      
+    print "saved images in {0}".format(os.path.abspath(destination_dir))
+
+  
