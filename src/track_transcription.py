@@ -141,22 +141,29 @@ class Track:
 
     csv_file = open(segmentations, 'r')
     segmented_spots = csv.reader(csv_file)  
+    
 
     row_id = 1 
     for row in segmented_spots:
-      if str.isdigit(row[0].replace('.',"")):
-        frame_id = int(float(row[0]))    
-        x = int(float(row[1])/ voxel_size[0])
-        y = int(float(row[2])/ voxel_size[1])
-
-        if x > image_dimensions[0]:
-          raise Exception("Error in {0} row {1}, the physical coordinate x={2} can not exceed the image size {3}.".format(segmentations, row_id, x, image_dimensions[0]))
-
-        if y > image_dimensions[1]:
-          raise Exception("Error in {0} row {1}, the physical coordinate y={2} can not exceed the image size {3}.".format(segmentations, row_id, y, image_dimensions[1]))
+      if len(row) != 0:      
         
-        frames_list.append([frame_id, x, y])
-        self.add_original_point_to_dictionary(frame_id, [x, y])
+        if str.isdigit(row[0].replace('.',"")):
+          frame_id = int(float(row[0]))    
+          x = int(float(row[1])/ voxel_size[0])
+          y = int(float(row[2])/ voxel_size[1])
+  
+          if x > image_dimensions[0]:
+            raise Exception("Error in {0} row {1}, the physical coordinate x={2} can not exceed the image size {3}.".format(segmentations, row_id, x, image_dimensions[0]))
+  
+          if y > image_dimensions[1]:
+            raise Exception("Error in {0} row {1}, the physical coordinate y={2} can not exceed the image size {3}.".format(segmentations, row_id, y, image_dimensions[1]))
+          
+          frames_list.append([frame_id, x, y])
+          self.add_original_point_to_dictionary(frame_id, [x, y])
+        else: 
+          print "Warning: ignoring row:{0}".format(row)
+      else:
+        print "Warning: ignoring row:{0}".format(row)
       row_id = row_id + 1
 
     return frames_list
@@ -528,7 +535,7 @@ class Track:
           distance: search range between frames for the movement of one object
     """
     t = tp.link_df(np_array,search_range = distance, memory = memory)
-    #tp.plot_traj(t)
+    tp.plot_traj(t)
 
 
 ###PRIVATE CLASS FUNCTIONS   
@@ -1086,7 +1093,7 @@ class Track:
     else:
       return  str(int_id).zfill(3)
 
-  def overlay_tracking_results(self, destination_dir, tracking_results, alpha_in = 0.40):
+  def overlay_tracking_results(self, destination_dir, tracking_results, alpha_in = 0.40, source_dir=None):
     """ Assign a color for every set of tracked transcription points and overlay 
         a circle around the points in the corresponding original frame. 
 
@@ -1095,7 +1102,9 @@ class Track:
           destination_dir: The directory to save overlayed image series 
           tracking_results: The dataframe that includes the tracking results. 
             It should has the columns: frame, x, y, and particle.
-          alpha: the transparance of the circles. It should be between 0 and 1. 
+          alpha_in: the transparance of the circles. It should be between 0 and 1. 
+          source_dir: Optiona directory for the stacked images to be overlayed. 
+            The images should have the same sizes, and names as the images used during the tracking tracking. 
   """
 
     from matplotlib import cm
@@ -1133,7 +1142,6 @@ class Track:
 
     #Distribute the colour over the 255 range for the color map
     streched_ids = [ int(math.floor(float(set_id) * color_step)) for set_id in range (0,n_particles)] 
-    print streched_ids
     scalar_color = [  cm.Accent(s_id, bytes=True, alpha = alpha_in) for s_id in streched_ids] 
     rgb_color_map = [ (particle, scalar_color[set_id]) \
       for particle, set_id in zip(particles_ids, range(0, n_particles))] 
@@ -1142,8 +1150,16 @@ class Track:
     #define a font
     fnt = ImageFont.load_default()
 
+    #Get the images: 
+    if source_dir !=None:
+      if not os.path.exists (source_dir):
+        raise Exeption("The directory {0} does not exist.".format(source_dir))
+      image_dir = source_dir
+    else:
+      image_dir = self.images_dir
+
     images_regex= self.frame_prefix + "*" + self.frame_suffix
-    image_files = glob.glob(os.path.join(self.images_dir,images_regex))
+    image_files = glob.glob(os.path.join(image_dir, images_regex))
 
     file_regex = re.compile(".*" + self.frame_prefix + "(?P<id>[0-9]*)" + self.frame_suffix)
     for frame in image_files:
