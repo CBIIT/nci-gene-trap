@@ -7,7 +7,6 @@ import os
 import argparse
 from ast import literal_eval
 import pdb
-import skimage
 import skimage.io
 import skimage.external.tifffile
 import glob
