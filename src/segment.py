@@ -48,7 +48,7 @@ def read_Dataframe_file(file_name, mandatory_columns):
   pass
 
 
-def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmented_stack_in, resolution, segmented_rna_points = None):
+def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmented_stack_in, resolution, segmented_rna_points = None, search_distance = None, maximum_memory = None, track_length = None):
   """
     Track the segmented cells. Generate a floder for every tracked cell where
     the masked and cropped cell frames will reside. Only cells that appear
@@ -85,6 +85,11 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
 
   # The extension ratio for the cropped cells 
   extention = 1.10
+  if maximum_memory == None:
+    maximum_memory = 3
+  
+  if search_distance == None:
+    search_distance = 25
 
   #Verify the inputs: 
   check_file(cells_analysis)
@@ -138,8 +143,23 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
     check_file(segmented_rna_points)
 
   #percentage of frames where the tracked cell should exist to be processed
-  minimum_frames_per_cell = int(math.ceil(0.98 * n_frames)) 
+
+
+  if track_length == None:
+    in_percentage =   0.98
+    minimum_frames_per_cell = int(math.ceil(in_percentage * n_frames)) 
+  else: 
+    if not isinstance(track_length, int):
+      raise Exception("The minimum track length should be a positive interger. Got{0}".format(track_length)) 
+    elif track_length < 1:
+      raise Exception("The minimum track length should be a positive interger. Got{0}".format(track_length)) 
+    else:
+      minimum_frames_per_cell = track_length
+
   print "Minimum number of frames where the cell should exist is {0}".format(minimum_frames_per_cell)
+  if minimum_frames_per_cell >  n_frames:
+    raise Exception ("ERROR: The minimum number of frames:{0} is greater than the number of frames:{1}."\
+      .format(minimum_frames_per_cell, n_frames))
 
   #Make sure the image resolution is passed
   x_voxel_size = float(resolution[0])
@@ -159,8 +179,8 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
 
 
   #Make the search range proportional to the resolution 
-  physical_search_range = 25* math.sqrt(x_voxel_size ** 2 + y_voxel_size ** 2)
-  tracks = trackpy.link_df(tracks_info, search_range =  physical_search_range, memory = 3)
+  physical_search_range = search_distance * math.sqrt(x_voxel_size ** 2 + y_voxel_size ** 2)
+  tracks = trackpy.link_df(tracks_info, search_range =  physical_search_range, memory = maximum_memory)
   cell_ids = tracks.particle.unique()
  
   #Pick the best tracked cells.
@@ -337,8 +357,11 @@ if __name__ == '__main__':
   parser.add_argument('binary_stack', help="The binary stack prefix to crop the region of interest for every cell.")
 
   parser.add_argument('--output_dir', dest='output_dir', default="./segmented-stacks", help="Directory to put the cells")
-  parser.add_argument('--resolution', dest='resolution', help="Tuple representing the resolution of the stack in X and Y. Should use the format (x,y)")
+  parser.add_argument('--resolution', dest='resolution', default = "(1,1)", help="Tuple representing the resolution of the stack in X and Y. Should use the format (x,y)")
   parser.add_argument('--rna_segmentation', dest='rnas', help="A csv file containing the x,y,frame,intensity for the RNA spots")
+  parser.add_argument('--minimum_track_length', type = int, dest='track_length', help="The minimun number of frames a cell should exist.")
+  parser.add_argument('--memory', type = int, dest='memory', help="The maximum number of frames a cell can disappear")
+  parser.add_argument('--search_range', dest='search_range', type = int,  help="Number of pixels a cell can move between two appearances")
 
 
   args = parser.parse_args()
@@ -351,6 +374,9 @@ if __name__ == '__main__':
       print "Can not parse the resolution {0} as tuple. Error{1}".format(args.resolution, e)
       raise
 
-  process_segmented_stack(args.measurments_file, args.output_dir, args.image_stack, args.binary_stack, resolution = stack_resolution, segmented_rna_points = args.rnas)
+  process_segmented_stack(args.measurments_file, args.output_dir,\
+    args.image_stack, args.binary_stack, resolution = stack_resolution, \
+    segmented_rna_points = args.rnas, search_distance = args.search_range, \
+    maximum_memory = args.memory, track_length = args.track_length )
 
 
