@@ -130,7 +130,10 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
     image_file = image_stack_in + str(frame_id).zfill(ndigits) + extension
     mask_file = segmented_stack_in + str(frame_id).zfill(ndigits) + extension
     check_file(image_file, file_list = image_files)
-    check_file(mask_file)
+    try:
+      check_file(mask_file)
+    except Exception as e:
+      raise Exception("The image file {0} does not have a matching mask file {1}. Exception:{2} ".format(image_file, mask_file, e))
 
 
   if minimum_frame < first_frame:  
