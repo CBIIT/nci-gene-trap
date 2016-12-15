@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from pandas import DataFrame, Series  # for convenience
+import pandas
 import pims
 import trackpy as tp
 import re
@@ -11,6 +12,8 @@ import os
 import csv 
 import math
 import glob
+import skimage.io
+from skimage import exposure
 
 class Track:
 
@@ -59,6 +62,8 @@ class Track:
     #It should be set when points are added
     self.point_index = None 
 
+    #A dataframe to store the segmented particles
+    self.particles_df = None
 
 #####PUBLIC CLASS FUNCTIONS
 
@@ -103,6 +108,94 @@ class Track:
       self.add_original_point_to_dictionary(frame_id, [x, y], original_group_id)
 
     return positions
+
+
+  def populate_rna_segmentation(self, segmentations, voxel_size, image_dimensions): 
+    """Create a dataframe and populate it using the segmented spots in a csv file.
+       The first row of csv file should contain the column tags.  
+       The column tags should contain the 'frame', and  'x', 'y' in physical coordinates.
+        
+
+       Parameters: 
+        segmentations: file that contains the segmented spots in the format mentiond above. 
+        voxel_size: A tuple (x,y) containing the spacing between two pixels in a frame.
+        image_dimensions: A tuple (x,y) containing the dimensions of a frame.
+       
+       Retruns:
+        The read dataframe with an extra column called unique_id.
+    """
+
+    #Check that the input file can be read   
+    frames_list = []
+
+    if (not isinstance(voxel_size[0], float)) and (not isinstance(voxel_size[0], int)):
+      if (not isinstance(voxel_size[1], float)) and (not isinstance(voxel_size[1], int)):
+        raise Exception("The voxel size should be int or float")
+
+    if voxel_size[0] <= 0 or voxel_size[1] <= 0:
+      raise Exception ("The voxel size should be a positive number")
+
+
+    if (not isinstance(image_dimensions[0], int)) or (not isinstance(image_dimensions[1], int)):
+      raise Exception ("The image dimensions should be integers")
+
+    if image_dimensions[0] <= 0 or image_dimensions[1] <= 0:
+      raise Exception ("The image dimensions should be positive integers")
+
+   
+    self.particles_df = pandas.read_csv(segmentations)
+    
+    #Convert thunderstorm column names: 
+    if 'x [nm]' in self.particles_df.columns.tolist():
+      self.particles_df.rename(columns={'x [nm]': 'x'}  , inplace =True)
+
+    if 'y [nm]' in self.particles_df.columns.tolist():
+      self.particles_df.rename(columns={'y [nm]': 'y'}  , inplace =True)
+
+    #Make sure the required columns are present:
+    if not 'x' in self.particles_df.columns.tolist():
+      raise Exception ("The csv file {0} does not contain the column 'x'".format(segmentations))
+
+    if not 'y' in self.particles_df.columns.tolist():
+      raise Exception ("The csv file {0} does not contain the column 'y'".format(segmentations))
+
+    if not 'frame' in self.particles_df.columns.tolist():
+      raise Exception ("The csv file {0} does not contain the column 'frame'".format(segmentations))
+
+    #Convert the frames to int:
+    self.particles_df.frame = self.particles_df.frame.astype(int)
+    
+    #Convert x physical coordinates to index
+    self.particles_df['x_index'] = self.particles_df.apply(lambda row: \
+      self.convert_coordinates(row['x'], voxel_size[0],image_dimensions[0]), axis = 1) 
+
+    #Convert y physical coordinates to index
+    self.particles_df['y_index'] = self.particles_df.apply(lambda row: \
+      self.convert_coordinates(row['y'], voxel_size[1],image_dimensions[1]), axis = 1) 
+  
+    
+    self.particles_df['unique_id'] = self.particles_df.apply(lambda row: self.add_original_point_to_dictionary(int(row['frame']),[row['x_index'], row['y_index']]), axis=1) 
+
+    return self.particles_df['frame'].tolist()
+
+
+  def convert_coordinates(self, physical_value, voxel_size, image_size):
+    """
+      Converts the physical coordinates to index values within the image and verifies the converted result lies within the image boundries  
+      Arguments:
+        physical_value: The coordinate in physical domain  
+        voxel_size: The voxel size in that dimension
+        image_size: The image size in that dimension
+
+      Returns:
+        index_value: The index value 
+    """
+
+    index_value = physical_value / voxel_size
+    if index_value > image_size:
+      raise Exception("ERROR: The physical coordinate:{0} is converted to index: {1} using voxel size:{2} and it can no exceed the image size {3}.".format(physical_value, index_value, voxel_size, x,image_size))
+
+    return index_value
 
 
   def preprocess_rna_segmentation(self, segmentations, voxel_size, image_dimensions): 
@@ -528,14 +621,25 @@ class Track:
     return [transformed_image, registration_result]
 
   def track(self, np_array, memory, distance):
-    """Tracks object and plots movement
+    """Tracks the particles and populate the particles_df with the correct id.
         Parameters:
           np_array: generated from transformix_results_to_array
           memory: maximum number of frames an object can be absent before it is declared a separate object
           distance: search range between frames for the movement of one object
     """
+
     t = tp.link_df(np_array,search_range = distance, memory = memory)
-    tp.plot_traj(t)
+
+    t['unique_id'] = t.apply(lambda row: self.get_unique_id(int(row['frame']),int(row['particle_id']) ), axis = 1)
+
+    #Merge  partile id with the original particles dataframe
+    if self.particles_df is not  None:
+      subset_df = t[['unique_id', 'particle']]      
+      merged_df = self.particles_df.merge(subset_df,  on='unique_id')
+      merged_df.to_csv("tracked-particles.csv")
+      print "Merged the dataframes"
+      
+    #tp.plot_traj(t)
 
 
 ###PRIVATE CLASS FUNCTIONS   
@@ -709,6 +813,10 @@ class Track:
         original_frame_id_raw: The original frame where the point belongs. 
         indexes: the indexes of the point in the destination frame id.
         original_group_id: The original group id that the point belongs too
+
+      Returns:
+        unique_id: A unique id for every original point in the dictionary. The first part will be the frame_id, 
+          and the second part will be the point_id.
     """
 
     #Make sure indexes contains two number for X and Y.
@@ -739,6 +847,35 @@ class Track:
     if original_group_id != None:
       self.frames_dictionary[original_frame_id]['original_points'][point_id]['original_group_id'] = original_group_id
 
+    return self.get_unique_id(original_frame_id_raw, point_id) 
+    
+
+  def get_unique_id(self,frame_id, point_id):
+    """
+      Returns: a unique string id for every point in the dictionary. 
+      Parameters: 
+        frame_id: A positive  integer for the frame_id.
+        point_id: A positive integer for the point id
+
+      Returns: 
+        a unique id for every point in the dictionary. 
+    """
+
+    #Verify the inputs
+    if not isinstance(frame_id, int):
+      raise Exception ("frame_id should be an integer. Got:{0}".format(frame_id))
+
+    if not isinstance(point_id, int):
+      raise Exception ("point_id should be an integer. Got:{0}".format(point_id))
+
+    if frame_id < 0:
+      raise Exception ("frame_id should be a positive integer. Got:{0}".format(frame_id))
+
+    #Assume the maximum point id is 999
+    if point_id < 0 or point_id > 999 :
+      raise Exception ("point_id should be a positive integer between 0 and 999. Got:{0}".format(point_id))
+
+    return  frame_id * 1000  + point_id
 
 
   def frame_points_to_dataframe(self, frame_id):
@@ -1161,6 +1298,7 @@ class Track:
     images_regex= self.frame_prefix + "*" + self.frame_suffix
     image_files = glob.glob(os.path.join(image_dir, images_regex))
 
+    temp_image_name='temp8bit.tif' 
     file_regex = re.compile(".*" + self.frame_prefix + "(?P<id>[0-9]*)" + self.frame_suffix)
     for frame in image_files:
       #Get the frame id:
@@ -1184,8 +1322,16 @@ class Track:
 
             
     
+      #First, read the image using skimage as it supports all types then convert it to unit8
+      original_image = skimage.io.imread(frame)
+      v_min, v_max = np.percentile(original_image, (0.2, 99.8))
+      better_contrast = exposure.rescale_intensity(original_image, in_range=(v_min, v_max))
+      #better_contrast = exposure.rescale_intensity(original_image)   
+      new_image = better_contrast * 255.0 / better_contrast.max()
+      skimage.io.imsave(temp_image_name, new_image.astype('uint8'))
+
       #Convert to frame to  RGBA
-      orig_frame_image = Image.open(frame)
+      orig_frame_image = Image.open(temp_image_name)
       rgba_frame = Image.new("RGBA", orig_frame_image.size)
       rgba_frame.paste(orig_frame_image)
       contours_frame = Image.new('RGBA', rgba_frame.size, (255, 255, 255, 0))
