@@ -17,13 +17,17 @@ else
   ERR_LOG_FILE=log-err.txt 
 fi
 
-
-if [ -z "ELASTIX_PATH" ]
+ELASTIX_TEST=$(which elastix)
+if [ "$?" -eq "1" ]
 then
-  echo "Error: The environment variable ELASTIX_PATH is not set" 1>&2
-  exit 1
+  if [ -z "ELASTIX_PATH" ]
+  then
+    echo "Error: The environment variable ELASTIX_PATH is not set" 1>&2
+    exit 1
+  fi    
+else
+  ELASTIX_PATH=$(dirname $ELASTIX_TEST)
 fi
-
 
 export DYLD_LIBRARY_PATH="$ELASTIX_PATH:$DYLD_LIBRARY_PATH"
 
