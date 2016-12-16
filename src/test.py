@@ -5,7 +5,7 @@ import argparse
 import glob
 import os
 import sys
-i
+import skimage.io
 
 
 def error_exit(error_message):
@@ -79,8 +79,8 @@ if image_files == None:
 
 sample_image = skimage.io.imread(image_files[0])
 #sample_image = Image.open(image_files[0])
-dimensions = sample_image.size
-print "The image dimensions are:" + dimensions
+dimensions = sample_image.shape
+print "The image dimensions are:{0}".format(dimensions)
 
 track_obj =  Track(processing_dir, override_results=override_registration)
 
@@ -107,8 +107,8 @@ df = track_obj.frame_points_to_dataframe(dest_str)
 try:
   memory = int(options_dic['memory'])
 except:
-  print "No memory for the tracking found. Using memory = 700"
-  memory = 700
+  memory = len(image_files)
+  print "No memory for the tracking found. Using the maximum value of:{0}".format(memory)
 
 try:
   distance = int(options_dic['distance'])

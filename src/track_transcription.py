@@ -107,6 +107,10 @@ class Track:
       frame_id = str(int(frame_id)).zfill(3)
       self.add_original_point_to_dictionary(frame_id, [x, y], original_group_id)
 
+   
+    #if self.particles_df is not None:
+    #self.particles_df =  DataFrame(data = positions, columns = ['frame', 'x', 'y'])
+    #self.particles_df.to_csv('particles-segmentation.csv')
     return positions
 
 
@@ -847,7 +851,7 @@ class Track:
     if original_group_id != None:
       self.frames_dictionary[original_frame_id]['original_points'][point_id]['original_group_id'] = original_group_id
 
-    return self.get_unique_id(original_frame_id_raw, point_id) 
+    return self.get_unique_id(int(original_frame_id_raw), point_id) 
     
 
   def get_unique_id(self,frame_id, point_id):
