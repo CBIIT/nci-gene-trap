@@ -32,4 +32,4 @@ fi
 
 export DYLD_LIBRARY_PATH="$ELASTIX_PATH:$DYLD_LIBRARY_PATH"
 
-transformix "$1"   >$OUT_LOG_FILE 2>$ERR_LOG_FILE
+transformix $1   >$OUT_LOG_FILE 2>$ERR_LOG_FILE
