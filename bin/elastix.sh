@@ -20,13 +20,13 @@ fi
 ELASTIX_TEST=$(which elastix)
 if [ "$?" -eq "1" ]
 then
-  if [ -z "ELASTIX_PATH" ]
+  if [ -z "$ELASTIX_PATH" ]
   then
     echo "Error: The environment variable ELASTIX_PATH is not set" 1>&2
     exit 1
   fi    
 else
-  ELASTIX_PATH=$(dirname $ELASTIX_TEST)
+  ELASTIX_PATH=$(dirname $ELASTIX_TEST | sed 's/bin/lib/') 
 fi
 
 export DYLD_LIBRARY_PATH="$ELASTIX_PATH:$DYLD_LIBRARY_PATH"
