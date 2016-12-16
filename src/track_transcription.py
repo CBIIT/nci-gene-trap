@@ -530,7 +530,10 @@ class Track:
     print "Registering {0} pairs.".format(len(work_list))
     from multiprocessing.pool import ThreadPool
     nthreads = multiprocessing.cpu_count()
+    #TODO This needs to be implemented using processess instead of threads. Setting nthreads to 1 for now.
+    nthreads = 1
     print "nthreads = " + str(nthreads)
+
     pool = ThreadPool(processes=nthreads)
     async_results = []
     for registration in range(len(work_list)):
