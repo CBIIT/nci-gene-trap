@@ -197,7 +197,7 @@ class Track:
 
     index_value = physical_value / voxel_size
     if index_value > image_size:
-      raise Exception("ERROR: The physical coordinate:{0} is converted to index: {1} using voxel size:{2} and it can no exceed the image size {3}.".format(physical_value, index_value, voxel_size, x,image_size))
+      raise Exception("ERROR: The physical coordinate:{0} is converted to index: {1} using voxel size:{2} and it can no exceed the image size {3}.".format(physical_value, index_value, voxel_size, image_size))
 
     return index_value
 
