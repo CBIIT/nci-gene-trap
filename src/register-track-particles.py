@@ -6,6 +6,7 @@ import glob
 import os
 import sys
 import skimage.io
+from PIL import Image
 
 
 def error_exit(error_message):
@@ -77,9 +78,12 @@ image_files = glob.glob(os.path.join(images_stack,images_regex))
 if image_files == None:
   error_exit("There are no files that matches the regex:{0}".format(images_regex))
 
-sample_image = skimage.io.imread(image_files[0])
-#sample_image = Image.open(image_files[0])
-dimensions = sample_image.shape
+#sample_image = skimage.io.imread(image_files[0])
+#dimensions = sample_image.shape
+
+sample_image = Image.open(image_files[0])
+dimensions =  sample_image.size
+
 print "The image dimensions are:{0}".format(dimensions)
 
 track_obj =  Track(processing_dir, override_results=override_registration)
@@ -116,6 +120,7 @@ except:
   print "No maximum distance the partcile can move in is found. Using distance=20"
   distance = 20
 
+print "Tracking the particles using  memory={0}, distance={1}".format(memory, distance)
 track_obj.track(df,memory , distance)
 
 #Overlay the results
