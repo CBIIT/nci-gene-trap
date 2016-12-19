@@ -102,6 +102,7 @@ frames = track_obj.populate_rna_segmentation(segmented_rnas, resolution, dimensi
 
 
 track_obj.iterative_tracking(destination, stride, frames, registration_file)
+print "The image dimensions are:{0}".format(dimensions)
 
 
 dest_str = track_obj.id2str(destination)
@@ -120,8 +121,8 @@ except:
   print "No maximum distance the partcile can move in is found. Using distance=20"
   distance = 20
 
-print "Tracking the particles using  memory={0}, distance={1}".format(memory, distance)
 track_obj.track(df,memory , distance)
+print "Tracked the particles using  memory={0}, distance={1}".format(memory, distance)
 
 #Overlay the results
 
