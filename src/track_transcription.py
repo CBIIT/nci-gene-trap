@@ -1360,7 +1360,8 @@ class Track:
 
       # Save the new file in the output directory
       out.save(os.path.join(destination_dir,os.path.basename(frame)))
-      
+     
+    os.remove(temp_image_name)
     print "saved images in {0}".format(os.path.abspath(destination_dir))
 
   
