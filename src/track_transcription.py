@@ -643,7 +643,7 @@ class Track:
     if self.particles_df is not  None:
       subset_df = t[['unique_id', 'particle']]      
       merged_df = self.particles_df.merge(subset_df,  on='unique_id')
-      merged_df.to_csv("tracked-particles.csv")
+      merged_df.to_csv("tracked-particles.csv", index=False)
       print "Merged the dataframes"
       
     #tp.plot_traj(t)
