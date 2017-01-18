@@ -8,6 +8,8 @@ import os
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description="A script to convert .loc files generated using localize to .csv files. The columns of the .loc file should be sapce separated and in the order of x y intensity frame")
   parser.add_argument('input', help='A direcotry that contains .loc file, or a single .loc filename. The columns of the .loc file should be sapce separated and in the order of "x" "y" "intensity" "frame"')
+  parser.add_argument('--incr', dest='increment', type=int, help='Append all the frame IDs with a constant integer')
+
   args = parser.parse_args()
 
   if not os.path.exists(args.input):
@@ -41,10 +43,13 @@ if __name__ == '__main__':
       temp_stream.write("".join(lines))
 
     #Read the temp file using pandas
-    particles = pandas.read_csv(temp_file, sep= ' *')
+    particles = pandas.read_csv(temp_file, sep= ' *', engine='python')
 
     #Get rid of the zero values
     true_particles = particles[(particles.x != 0) & (particles.y != 0)]
+    if args.increment != None:
+      true_particles['frame'] = true_particles['frame'] + args.increment
+      true_particles['frame'] = true_particles['frame'].astype(int)
     true_particles.to_csv(csv_file_name,index=False)
     print "convert {0} to {1}".format(loc_file, csv_file_name)
 
