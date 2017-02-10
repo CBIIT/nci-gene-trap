@@ -490,13 +490,15 @@ class Track:
     #Set the first and last frame ids.
     images_regex= self.frame_prefix + "*" + self.frame_suffix
     full_regex = os.path.join(self.images_dir, images_regex)
-    image_files = glob.glob(full_regex)
+    image_files = sorted(glob.glob(full_regex))
+
 
     if image_files == None or len(image_files) == 0 :
       raise Exception ("There are no files that matches the regex:{0}".format(full_regex))
 
     file_regex = re.compile(".*" + self.frame_prefix + "(?P<id>[0-9]*)" + self.frame_suffix)
 
+        
     self.min_frame_id = int(file_regex.search(image_files[0]).groupdict()['id'])
     self.max_frame_id = int(file_regex.search(image_files[-1]).groupdict()['id'])
 
@@ -736,9 +738,9 @@ class Track:
         #print self.particle_df.index
         self.transform_tracked_point(frame, pilot_frames, original_frames)
 
-
       #Print a csv file with the particles information
-      self.particle_df.to_csv("propagated-particle-{0}.csv".format(my_particle))
+      self.particle_df = self.particle_df.sort_index()
+      self.particle_df.to_csv("propagated-particle-{0}.csv".format(my_particle), index_label = "frame")
 
   def transform_tracked_point(self, frame, pilot_frames, original_frames):
     """Search for the closest anchor_frame to frame. Transform the x,y position
