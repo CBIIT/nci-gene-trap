@@ -740,7 +740,7 @@ class Track:
 
       #Print a csv file with the particles information
       self.particle_df = self.particle_df.sort_index()
-      self.particle_df.to_csv("propagated-particle-{0}.csv".format(my_particle), index_label = "frame")
+      self.particle_df.to_csv("propagated-particle-{0}.csv".format(int(my_particle)), index_label = "frame")
 
   def transform_tracked_point(self, frame, pilot_frames, original_frames):
     """Search for the closest anchor_frame to frame. Transform the x,y position
