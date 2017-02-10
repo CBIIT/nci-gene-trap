@@ -73,10 +73,11 @@ except Exception as e:
 
 #Get the dimensions of the images
 images_regex= images_prefix + "*" + images_suffix
-image_files = glob.glob(os.path.join(images_stack,images_regex))
+full_regex = os.path.join(images_stack,images_regex)
+image_files = glob.glob(full_regex)
 
-if image_files == None:
-  error_exit("There are no files that matches the regex:{0}".format(images_regex))
+if image_files == None or len(image_files) == 0 :
+  error_exit("There are no files that matches the regex:{0}".format(full_regex))
 
 #sample_image = skimage.io.imread(image_files[0])
 #dimensions = sample_image.shape
