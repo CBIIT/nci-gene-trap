@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser(description="A script to generate configuration
 
 parser.add_argument('cells_dir', help="The top level directory that contains the cells directories")
 parser.add_argument('input_master', help="The generic configuration file")
-parser.add_argument('--overwite', action="store_true", help="Overwirte the configuration files if they exist.")
+parser.add_argument('-o', '--overwrite', action="store_true", help="Overwirte the configuration files if they exist.")
 
 
 args = parser.parse_args()
