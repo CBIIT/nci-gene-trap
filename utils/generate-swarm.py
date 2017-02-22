@@ -8,6 +8,7 @@ parser = argparse.ArgumentParser(description="A script to generate configuration
 
 parser.add_argument('cells_dir', help="The top level directory that contains the cells directories")
 parser.add_argument('input_master', help="The generic configuration file")
+parser.add_argument('--overwite', action="store_true", help="Overwirte the configuration files if they exist.")
 
 
 args = parser.parse_args()
@@ -71,7 +72,8 @@ for cell_name in cells:
 
   
     config_path = os.path.join(cells_dir, cell_name + "/config.cfg")
-    if os.path.isfile(config_path):
+    if not args.overwrite:
+      if os.path.isfile(config_path):
         raise Exception ('Error, the fonfiguration file "{0}" already exists'.format(config_path))
 
     with open(config_path, 'wb') as configfile:
