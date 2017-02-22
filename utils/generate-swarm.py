@@ -74,7 +74,7 @@ for cell_name in cells:
     config_path = os.path.join(cells_dir, cell_name + "/config.cfg")
     if not args.overwrite:
       if os.path.isfile(config_path):
-        raise Exception ('Error, the fonfiguration file "{0}" already exists'.format(config_path))
+        raise Exception ('Error, the configuration file "{0}" already exists'.format(config_path))
 
     with open(config_path, 'wb') as configfile:
         config.write(configfile)
