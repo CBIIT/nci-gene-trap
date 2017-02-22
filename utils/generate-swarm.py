@@ -56,10 +56,13 @@ for cell_name in cells:
 
     #Get the number of frames for the cell:
     image_prefix = config.get('arguments', 'images-prefix')
-    images = glob.glob(os.path.join(stack_dir, image_prefix) + '*' )
+    search_prefix = os.path.join(stack_dir, image_prefix) + '*' 
+    images = glob.glob(search_prefix)
     n_frames = len(images)
-    destination_frame = n_frames / 2
+    if n_frames == 0:
+      raise Exception('ERROR: Can not find any image that match the prefix "{0}"'.format(search_prefix))
 
+    destination_frame = n_frames / 2
     config.set('arguments', 'stack-dir', stack_dir)
     config.set('arguments', 'segmented-RNAs', segmented_rnas)
     config.set('arguments', 'processing-dir', tracking_dir)
