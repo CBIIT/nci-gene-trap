@@ -1,0 +1,45 @@
+#!/bin/bash
+
+if [ -z "$1" ]
+then
+    echo "ERROR using runme" >&2
+    echo "USAGE: runme <processing directory>" >&2
+    exit
+fi
+        
+PROCESSING_DIR="$1"
+
+if ! [ -d "$PROCESSING_DIR" ]
+then
+    echo "ERROR: The processing directory $PROCESSING_DIR does not exist." >&2
+    exit
+fi
+
+cd $PROCESSING_DIR 
+#Load elastix
+module load elastix 
+
+which elastix
+if [ "$?" -eq "1" ]
+then
+    echo "Can not find elastix"
+    exit
+else
+    ELASTIX_TEST=$(which elastix)
+    export ELASTIX_PATH=$(dirname $ELASTIX_TEST)
+    echo $ELASTIX_PATH
+fi
+
+if [ -z "$GENE_TRAP_ROOT" ]
+then
+  echo "The environment variable GENE_TRAP_ROOT is not defined" >&2
+  exit
+fi
+
+if [ -z "$ELASTIX_PATH" ]
+then
+    echo "The environment variable ELASTIX_PATH is not defined." >&2
+    exit
+fi
+
+python $GENE_TRAP_ROOT/src/register-track-particles.py config.cfg
