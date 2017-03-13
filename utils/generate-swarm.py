@@ -45,8 +45,9 @@ except ConfigParser.Error as error:
 #Get the list of directories
 cells = [x for x in os.listdir(cells_dir) if os.path.isdir(x)]
 
-#Modify the config file to include the cell directory
 
+print "found {0} cell directories".format(len(cells))
+#Modify the config file to include the cell directory
 processing_dirs=[]
 for cell_name in cells: 
 
@@ -79,7 +80,9 @@ for cell_name in cells:
     with open(config_path, 'wb') as configfile:
         config.write(configfile)
 
+    new_job = os.path.join(cells_dir, cell_name)
     processing_dirs.append(os.path.join(cells_dir, cell_name))
+    print "Added  {0} to the joblist".format(new_job)
    
 
 #Generate a swarm file:
