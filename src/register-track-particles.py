@@ -7,14 +7,9 @@ import os
 import sys
 import skimage.io
 from PIL import Image
+from util_functions import error_exit, read_config
 
 
-def error_exit(error_message):
-  """Print an error message and exit the program with the error code 1.
-    """
-  error_message = error_message + "\n"
-  sys.stderr.write(error_message)
-  exit(1)
 
 
 
@@ -23,42 +18,14 @@ parser.add_argument('input_master', help="The master configuration file")
 args = parser.parse_args()
 config_file = args.input_master
 
-if not os.path.isfile(config_file):
-  raise Exception ('Error the configuration file "{0}" does not exist.'.format(config_file))
 
-config = ConfigParser.ConfigParser()
-#config.optionxform = str
-
-try:
-  config.read(config_file)
-except ConfigParser.Error as error:
-  error_exit('ERROR: unable to parse "config_file"\nERROR details: {0}'.format(error))
-
-
-#Check the input file contains the mandatory sections:
-if not "arguments" in config.sections():
-  error_exit('ERROR: The config file does not contain the mandatory section {0}\n'.format(section))
-
-
-arguments = config.items("arguments")
-mandatory_args = ['stack-dir', 'images-prefix', 'images-suffix', 'processing-dir', 'override-registration',\
-  'segmented-rnas', 'point-or-index', 'registration-file', 'destination', 'stride', 'resolution']
-
-options_dic = dict(arguments)
-option_names=options_dic.keys()
-
-#Verify all options are present
-for item in mandatory_args: 
-  if not item in option_names: 
-    error_exit('ERROR: Section "{0}" does not contain the mandatory argument "{1}"\n'\
-      .format("arguments", item))
-
+options_dic =  read_config(config_file)
 
 images_stack = options_dic['stack-dir']
 images_prefix = options_dic['images-prefix'] 
 images_suffix= options_dic['images-suffix']
 processing_dir = options_dic['processing-dir']
-override_registration = config.getboolean('arguments', 'override-registration') 
+override_registration = options_dic['override-registration'] 
 segmented_rnas = options_dic['segmented-rnas'] 
 point_index = options_dic['point-or-index']
 registration_file = options_dic['registration-file'] 
