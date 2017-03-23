@@ -81,7 +81,7 @@ class Track:
     nthreads = multiprocessing.cpu_count()
     #TODO This needs to be implemented using processess instead of threads. Setting nthreads to 1 for now.
     nthreads = 1
-    print "nthreads = " + str(nthreads)
+    #print "nthreads = " + str(nthreads)
 
     self.pool = ThreadPool(processes=nthreads)
  
@@ -131,7 +131,7 @@ class Track:
 
    
     #if self.particles_df is not None:
-      registration_result = self.get_registration_results(ref_id, float_id)
+    #registration_result = self.get_registration_results(ref_id, float_id)
     #self.particles_df =  DataFrame(data = positions, columns = ['frame', 'x', 'y'])
     #self.particles_df.to_csv('particles-segmentation.csv')
     return positions
@@ -715,7 +715,7 @@ class Track:
     pilot_frames = sorted(range(self.destination, self.max_frame_id + 1, self.stride)  + \
                    range(self.destination, self.min_frame_id - 1, -self.stride ) )
 
-    print sorted(pilot_frames)
+    #print sorted(pilot_frames)
 
     for my_particle in particles_ids:
 
@@ -747,10 +747,10 @@ class Track:
     to frame. Use recursion if the anchor_frame is not part of the created
     self.particle_df
 
-    Parameters:
-      frame: The destination frame ID. 
-      pilot_frames: List of all the pilot frames
-      original_frames: List of original frames where the particle existed.
+    Args:
+      frame (str): The destination frame ID. 
+      pilot_frames (list): List of all the pilot frames
+      original_frames (list): List of original frames where the particle existed.
     """
 
     #print "propagating frame {0}".format(frame)
@@ -1106,7 +1106,38 @@ class Track:
     else:    
       return DataFrame(data = temp_np, columns = ['frame', 'x', 'y', 'particle_id'])
 
+
+
     return temp_np
+
+
+  def original_points_to_dataframe(self):
+    """Collect the original points from the dictionary and returns them as a data frame
+
+      Returns:
+        data_frame: The DataFrame object, None if there are no points in the frame.
+    """
+
+    temp_np = np.empty((0,4))
+
+    for frame_id in self.frames_dictionary:
+      original_points = self.get_original_points(frame_id)
+
+      for frame, point_id, indexes in original_points: 
+        temp_np = np.append(temp_np,[[int(frame),indexes[0], indexes[1], point_id]], axis=0)
+
+
+    if temp_np.shape[0] == 0:
+      return None
+    else:    
+      new_df = DataFrame(data = temp_np, columns = ['frame', 'x_index', 'y_index', 'particle_id'])
+      self.particles_df = new_df 
+
+      self.particles_df['unique_id'] = self.particles_df.apply(lambda row: self.get_unique_id(int(row['frame']),int(row['particle_id'])), axis=1) 
+
+      #print self.particles_df
+      return new_df 
+
 
 
   def get_original_points(self, frame_id):
@@ -1442,11 +1473,11 @@ class Track:
 
 
         Parameters:
-          destination_dir: The directory to save overlayed image series 
-          tracking_results: The dataframe that includes the tracking results. 
+          destination_dir (str): The directory to save overlayed image series 
+          tracking_results (dataframe): The dataframe that includes the tracking results. 
             It should has the columns: frame, x, y, and particle.
-          alpha_in: the transparance of the circles. It should be between 0 and 1. 
-          source_dir: Optiona directory for the stacked images to be overlayed. 
+          alpha_in (float): the transparance of the circles. It should be between 0 and 1. 
+          source_dir: Optional directory for the stacked images to be overlayed. 
             The images should have the same sizes, and names as the images used during the tracking tracking. 
   """
 
