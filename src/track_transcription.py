@@ -14,6 +14,8 @@ import math
 import glob
 import skimage.io
 from skimage import exposure
+from util_functions import HighlightPoints 
+
 
 class Track:
 
@@ -1504,29 +1506,13 @@ class Track:
     if not "y" in tracking_results:
       raise Exception ("ERROR: the tracking_results do not contain the 'y' column")
 
-    if alpha_in < 0 or alpha_in > 1: 
-      raise Exception ("ERROR: alpha_in should be between 0 and 1")
-      
 
     self.create_dir(destination_dir)
 
     tr = tracking_results
-    # The number of particles 
-    #n_particles =  len(set(tr['particle'].tolist()))
     particles_ids =  tr.particle.unique().tolist()
     n_particles = len(particles_ids)
-
-    color_step =  255  / float(n_particles) 
-
-    #Distribute the colour over the 255 range for the color map
-    streched_ids = [ int(math.floor(float(set_id) * color_step)) for set_id in range (0,n_particles)] 
-    scalar_color = [  cm.Accent(s_id, bytes=True, alpha = alpha_in) for s_id in streched_ids] 
-    rgb_color_map = [ (particle, scalar_color[set_id]) \
-      for particle, set_id in zip(particles_ids, range(0, n_particles))] 
-    color_dict = dict(rgb_color_map)
-   
-    #define a font
-    fnt = ImageFont.load_default()
+    drawer = HighlightPoints(nobjects=n_particles, alpha_in=alpha_in)
 
     #Get the images: 
     if source_dir !=None:
@@ -1539,7 +1525,6 @@ class Track:
     images_regex= self.frame_prefix + "*" + self.frame_suffix
     image_files = glob.glob(os.path.join(image_dir, images_regex))
 
-    temp_image_name='temp8bit.tif' 
     file_regex = re.compile(".*" + self.frame_prefix + "(?P<id>[0-9]*)" + self.frame_suffix)
     for frame in image_files:
       #Get the frame id:
@@ -1558,42 +1543,11 @@ class Track:
           raise Exception ("Error got more than one particle with the same id in one frame")
 
         mapped_particle_id = mapped_particle_row.iloc[0].particle
-        points_color_information.append((color_dict[mapped_particle_id], indexes, mapped_particle_id))
+        points_color_information.append((indexes[0], indexes[1], mapped_particle_id))
 
-      #First, read the image using skimage as it supports all types then convert it to unit8
-      original_image = skimage.io.imread(frame)
-      v_min, v_max = np.percentile(original_image, (0.2, 99.8))
-      better_contrast = exposure.rescale_intensity(original_image, in_range=(v_min, v_max))
-      #better_contrast = exposure.rescale_intensity(original_image)   
-      new_image = better_contrast * 255.0 / better_contrast.max()
-      skimage.io.imsave(temp_image_name, new_image.astype('uint8'))
+      output_frame = os.path.join(destination_dir,os.path.basename(frame))
+      drawer.highlight_points(frame, output_frame, points_color_information)
 
-      #Convert to frame to  RGBA
-      orig_frame_image = Image.open(temp_image_name)
-      rgba_frame = Image.new("RGBA", orig_frame_image.size)
-      rgba_frame.paste(orig_frame_image)
-      contours_frame = Image.new('RGBA', rgba_frame.size, (255, 255, 255, 0))
-      draw= ImageDraw.Draw(contours_frame)
-
-      # Create a colored circle around every point  
-      for color, indexes, mapped_id in  points_color_information: 
-        top_x = indexes[0] - 10
-        top_y = indexes[1] -10
-        bottom_x = indexes[0] + 10 
-        bottom_y = indexes[1] + 10 
-
-        draw.ellipse((top_x, top_y, bottom_x , bottom_y), outline=color)
-
-        # typethe particle id at the lower corner
-        draw.text((bottom_x,bottom_y), str(int(mapped_id)), font=fnt, fill=color)
-
-      #Blend the original image with the contours
-      out = Image.alpha_composite(rgba_frame, contours_frame)
-
-      # Save the new file in the output directory
-      out.save(os.path.join(destination_dir,os.path.basename(frame)))
-     
-    os.remove(temp_image_name)
     print "saved images in {0}".format(os.path.abspath(destination_dir))
 
   
