@@ -103,6 +103,8 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
 
   image_files = glob.glob(image_stack_in + "*")
   image_files.sort()
+  if len(image_files)  < 1:
+    raise Exception("Can not find any file that matches the prefix:{0}".format(image_stack_in))
   first_file = image_files[0]
   last_file = image_files[-1]
 
@@ -177,8 +179,8 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
   RNAs = None
   if segmented_rna_points != None:
     RNAs = pandas.read_csv(segmented_rna_points)
-    RNAs.rename(columns={'frame':'rna_frame', 'x':'org_x', 'y':'org_y', 'intensity':'rna_intensity'}, inplace = True)
-    RNAs.rna_frame = RNAs.rna_frame.apply(int)
+    RNAs.rename(columns={'x':'org_x', 'y':'org_y', 'intensity':'rna_intensity'}, inplace = True)
+    RNAs.frame = RNAs.frame.apply(int)
 
 
   #Make the search range proportional to the resolution 
@@ -243,9 +245,9 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
 
     #Initialize the per cell RNA Dataframe
     if RNAs is not  None:
-      new_x = 'x_new'
-      new_y = 'y_new'
-      rna_spots_info = pandas.DataFrame(columns=[new_x, new_y, 'rna_frame', 'org_x', 'org_y', 'rna_intensity'])  
+      new_x = 'x'
+      new_y = 'y'
+      rna_spots_info = pandas.DataFrame(columns=[new_x, new_y, 'frame', 'org_x', 'org_y', 'rna_intensity'])  
       #print "Before analyzing the cell, number of spots info = {0}".format(len(rna_spots_info.index))
 
     #Loop over all the frames
@@ -254,6 +256,8 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
 
 
     for frame_id in range(first_frame,n_frames + first_frame):
+
+      print "processing frame_id: {0}".format(frame_id)
 
       #Get the frame if it is part of the track, otherwise get the information
       # from the closest frame. 
@@ -286,13 +290,14 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
         #frame_info.Left < X < frame_info.Right,and
         #frame_info.Upper < Y < frame_info.Lower 
 
-        frame_filter = RNAs[(RNAs.rna_frame == frame_id)]
+        frame_filter = RNAs[(RNAs.frame == frame_id)]
         x_filter = frame_filter[(frame_filter.org_x > left) & ( frame_filter.org_x < right)]
         frame_cell_points = x_filter[(x_filter.org_y > upper) & (x_filter.org_y < lower)] 
 
         if len(frame_cell_points.index) != 0:
           #Calculate the new index for the RNA transcription points using the formulat x_new = (x_old - frame_info.x) / x_voxel_size  + new_max_width / 2.0 
           #Note that everything is in image dimention at this point
+          print "found RNA spots" 
 
           x_df = (frame_cell_points.loc[:,'org_x'] - frame_info.x / x_voxel_size + new_max_width / 2.0).apply(int)
           frame_cell_points.loc[:,new_x] = x_df 
@@ -345,7 +350,7 @@ def process_segmented_stack(cells_analysis, output_dir, image_stack_in, segmente
     #Write the csv file for the RNAs spots 
     if RNAs is not None: 
       rna_info_file = os.path.join(cell_dir,"rna-info.csv")
-      rna_spots_info.to_csv(rna_info_file, index = False, columns = ['rna_frame', new_x, new_y, 'org_x', 'org_y', 'rna_intensity'] )
+      rna_spots_info.to_csv(rna_info_file, index = False, columns = ['frame', new_x, new_y, 'org_x', 'org_y', 'rna_intensity'] )
       print "Found {0} RNA spots".format(len(rna_spots_info.index))
   
     iteration = iteration + 1
