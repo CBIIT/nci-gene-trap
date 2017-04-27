@@ -550,6 +550,7 @@ class Track:
     if reference_list != None  and moving_list != None:
       if len(reference_list) != len(moving_list):
         raise Exception ("ERROR: The length of the reference and moving list should match")
+
    
     image_prefix = self.frame_prefix 
     image_suffix = self.frame_suffix
@@ -682,7 +683,7 @@ class Track:
       merged_df.to_csv("tracked-particles.csv", index=False)
       print "Merged the dataframes"
 
-      self.propagate_tracked_results(merged_df)
+      #self.propagate_tracked_results(merged_df)
      
     #tp.plot_traj(t)
 
@@ -1364,6 +1365,9 @@ class Track:
 
     self.registration_params = params 
 
+    #print frames_ids
+    frames_ids = list(set(frames_ids))
+
     #Get the registration pairs
     frames2pilots, upper_p2p, lower_p2p = self.get_iterative_registration_pairs(destination, stride, frames_ids) 
 
@@ -1549,7 +1553,6 @@ class Track:
       for original_frame_id, point_id, indexes in original_frame_points:
 
         mapped_particle_row = tr[(tr.frame == int(frame_id)) & (tr.particle_id == point_id)]
-
         #Double check that we have only one particle with a given point_id in a frame
         if mapped_particle_row.shape[0] != 1:  
           raise Exception ("Error got more than one particle with the same id in one frame")
@@ -1557,8 +1560,6 @@ class Track:
         mapped_particle_id = mapped_particle_row.iloc[0].particle
         points_color_information.append((color_dict[mapped_particle_id], indexes, mapped_particle_id))
 
-            
-    
       #First, read the image using skimage as it supports all types then convert it to unit8
       original_image = skimage.io.imread(frame)
       v_min, v_max = np.percentile(original_image, (0.2, 99.8))
@@ -1580,6 +1581,7 @@ class Track:
         top_y = indexes[1] -10
         bottom_x = indexes[0] + 10 
         bottom_y = indexes[1] + 10 
+
         draw.ellipse((top_x, top_y, bottom_x , bottom_y), outline=color)
 
         # typethe particle id at the lower corner
