@@ -76,6 +76,7 @@ print "The image dimensions are:{0}".format(dimensions)
 dest_str = track_obj.id2str(destination)
 df = track_obj.frame_points_to_dataframe(dest_str)
 
+
 #Track and merge the tracked data_frame with the original dataframe 
 try:
   memory = int(options_dic['memory'])
@@ -91,6 +92,8 @@ except:
 
 track_obj.track(df,memory , distance)
 print "Tracked the particles using  memory={0}, distance={1}".format(memory, distance)
+
+df.to_csv("tracker-results.csv")
 
 #Overlay the results
 
